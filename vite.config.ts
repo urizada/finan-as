@@ -3,12 +3,15 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { viteSingleFile } from 'vite-plugin-singlefile';
 
-export default defineConfig({
+// `--mode teste` gera um único HTML (sem PWA) para a página de testes.
+export default defineConfig(({ mode }) => ({
+  build: mode === 'teste' ? { outDir: 'dist-teste' } : undefined,
   plugins: [
     react(),
     tailwindcss(),
-    VitePWA({
+    mode === 'teste' ? viteSingleFile() : VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['icone.svg'],
       manifest: {
@@ -34,4 +37,4 @@ export default defineConfig({
     environment: 'node',
     setupFiles: ['src/testes/setup.ts'],
   },
-});
+}));

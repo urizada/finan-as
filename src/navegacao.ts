@@ -10,11 +10,11 @@ const ROTAS: Rota[] = [
 ];
 
 function lerRota(): Rota {
-  const r = location.hash.replace(/^#\/?/, '') as Rota;
+  const r = location.hash.replace(/^#\/?/, '') as Rota; // aceita #saldos e #/saldos
   return ROTAS.includes(r) ? r : 'hoje';
 }
 
-/** Navegação por hash (#/saldos): o gesto de voltar do celular funciona. */
+/** Navegação por hash (#saldos): o gesto de voltar do celular funciona. */
 export function useRota(): Rota {
   const [rota, setRota] = useState(lerRota);
   useEffect(() => {
@@ -25,7 +25,7 @@ export function useRota(): Rota {
   return rota;
 }
 
-export const linkPara = (rota: Rota) => `#/${rota === 'hoje' ? '' : rota}`;
+export const linkPara = (rota: Rota) => (rota === 'hoje' ? '#' : `#${rota}`);
 
 /** A qual aba da barra inferior cada rota pertence. */
 export function abaDe(rota: Rota): Rota {

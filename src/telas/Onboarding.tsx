@@ -59,7 +59,7 @@ export function Onboarding() {
     }
     if (passo === 'reserva') {
       await repositorio.salvarConfig({ onboardingConcluido: true });
-      location.hash = '#/';
+      location.hash = '';
       return;
     }
     setPasso(PASSOS[i + 1]);
