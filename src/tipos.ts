@@ -21,6 +21,10 @@ export interface Config {
   tema: 'claro' | 'escuro';
   /** Conta usada quando o lançamento não diz qual (lançamento rápido, fixos). */
   contaPadraoId?: Id;
+  /** 5.7: como dividir o que sobra de uma entrada depois dos fixos (percentuais que somam 100). */
+  divisaoEntrada?: { reserva: number; investimentos: number; metas: number; livre: number };
+  /** Mostrar a sugestão de divisão ao lançar entrada que já caiu. Padrão: sim. */
+  sugerirDivisao?: boolean;
 }
 
 export interface Conta {

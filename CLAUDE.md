@@ -55,6 +55,8 @@ Config {
   tema: 'claro' | 'escuro';          // padrão: 'claro'
   contaPadraoId?;                    // conta usada quando o lançamento não diz qual
   onboardingConcluido: boolean;
+  divisaoEntrada?: { reserva; investimentos; metas; livre };  // % que somam 100 (padrão 20/10/0/70)
+  sugerirDivisao?: boolean;          // mostrar a divisão ao lançar entrada que caiu (padrão: sim)
 }
 
 Conta {                              // onde o dinheiro fica parado e disponível
@@ -274,6 +276,11 @@ Cada fase termina com o app rodando e os testes passando.
 - **Economia:** é uma `transferencia` da conta para uma meta (`destino: { tipo: 'meta' }`); a "Reserva de emergência" é criada sozinha. Sai do saldo da conta e pode repetir.
 - **Excluir:** botão sempre visível na edição. Parcelado: só esta / esta e as próximas / todas. Repetição: só esta vez (a data vira `excecoes` da recorrência e não volta) / esta e as próximas (a recorrência ganha `fim`) / todas. Pagamento de fatura e economia não viram gasto ao editar: só dá para ver e excluir.
 - **Tela Cartões (Fase 4 adiantada):** por cartão, fatura atual (aberta/fechada/paga) com marcar como paga, compras de cada fatura (tocar para corrigir/excluir), próximas faturas, limite usado (o que ainda não foi pago, inclusive parcelas futuras), disponível e melhor dia de compra.
+- **Livre por dia (5.1) — dinheiro de partida:** além das entradas garantidas do mês, entra o que já estava na conta no começo do mês: no primeiro mês de uso, o saldo informado; nos seguintes, a sobra do mês anterior se `destinoSobraMes = 'proximoMes'` (se for `'reserva'`, só entra se for negativa, e a tela Hoje sugere guardar a sobra). Menos a fatura que já estava aberta antes do app, se vence no mês. Pagamento de fatura e `saldoAnterior` são neutros; parcelas contam pela competência; economia conta como aporte. A tela mostra "Como é calculado" com cada linha.
+- **Alerta de caixa (5.2):** de hoje ao fim do mês, contando só entradas garantidas; se o saldo das contas ficar negativo, mostra o primeiro dia e o pior valor que vai faltar.
+- **Divisão de entrada (5.7):** ao lançar entrada garantida que já caiu, abre a sugestão: primeiro cobre o que falta dos fixos e faturas até o fim do mês (descontando o que já havia na conta), o resto pelos percentuais. Botão "Guardar R$ X" cria a economia na reserva (valor editável).
+- **Tela Hoje:** livre para gastar hoje + ainda posso hoje (e "se as prováveis caírem"), alerta de caixa, lançamento rápido, **Chegando** (fixos, entradas e faturas dos próximos 10 dias e atrasados, com Pagar/Caiu), **Suas contas** (saldo hoje por conta e previsto no fim do mês), este mês (entrou/gastou/falta pagar), cartões, reserva.
+- **Totais:** resultado do mês (entrou − gastou − guardou), entrou, custo de vida (fixos + dia a dia + parcelas, pela competência), economizado % e por mês no ano, gasto médio por dia (no primeiro mês, a partir do início do uso) vs livre hoje.
 - **Referência visual:** o usuário enviou prints de um app de finanças que gosta (grade de saldos dia a dia, totais do mês, economizado). Serve de inspiração, não de cópia: a ideia é ser mais visual e mais simples.
 
 ## 9. Fora da v1 (já previsto na arquitetura)

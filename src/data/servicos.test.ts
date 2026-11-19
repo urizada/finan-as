@@ -89,3 +89,34 @@ describe('excluir com escopo', () => {
     expect(await ps()).toEqual([]);
   });
 });
+
+import { resumoHoje, sugerirDivisao } from './servicos';
+import { diasRestantesNoMes, diasNoMes } from '../calculos/datas';
+
+describe('tela Hoje (serviço)', () => {
+  it('primeiro mês: o saldo informado entra no livre por dia, fixos e fatura antiga saem', async () => {
+    const hoje = hojeISO();
+    const conta = await repositorio.contas.criar({ nome: 'C', tipo: 'corrente', saldoInicial: 300000, dataSaldoInicial: hoje });
+    await repositorio.salvarConfig({ contaPadraoId: conta.id, onboardingConcluido: true });
+    const ultimoDia = diasNoMes(mesDe(hoje));
+    await repositorio.recorrencias.criar({ diaDoMes: ultimoDia, ativa: true, modelo: { tipo: 'saida', valor: 120000, descricao: 'Aluguel', contaId: conta.id } });
+    const r = await resumoHoje();
+    expect(r.livre.partida).toBe(300000);
+    expect(r.livre.fixos).toBe(120000);
+    expect(r.livre.livreHoje).toBe(Math.floor(180000 / diasRestantesNoMes(hoje)));
+    expect(r.saldoHoje.total).toBe(300000);
+    expect(r.fimDoMes).toBe(180000);
+    expect(r.alerta).toBeNull();
+    expect(r.chegando.some((c) => c.lancamento?.descricao === 'Aluguel')).toBe(diasRestantesNoMes(hoje) <= 11);
+  });
+  it('divisão: completa os fixos que faltam e divide o resto', async () => {
+    const hoje = hojeISO();
+    const conta = await repositorio.contas.criar({ nome: 'C', tipo: 'corrente', saldoInicial: 0, dataSaldoInicial: hoje });
+    await repositorio.recorrencias.criar({ diaDoMes: diasNoMes(mesDe(hoje)), ativa: true, modelo: { tipo: 'saida', valor: 100000, descricao: 'Aluguel', contaId: conta.id } });
+    await criarLancamento({ tipo: 'entrada', valor: 500000, data: hoje, descricao: 'Comissão', contaId: conta.id, certeza: 'garantida', status: 'realizado' });
+    const d = await sugerirDivisao(500000);
+    expect(d.fixos).toBe(100000);
+    expect(d.fixos + d.reserva + d.investimentos + d.metas + d.livre).toBe(500000);
+    expect(d.reserva).toBe(80000);
+  });
+});

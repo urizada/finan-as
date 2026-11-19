@@ -5,6 +5,7 @@ import { Botao, CampoEscolha, Segmentos } from '../componentes/ui';
 import { repositorio } from '../data/repositorio';
 import { useConsulta } from '../data/useConsulta';
 import { PERFIS } from '../calculos/padroes';
+import { PERCENTUAIS_PADRAO, percentuaisValidos, type Percentuais } from '../calculos/orcamento';
 import { linkPara } from '../navegacao';
 import type { PerfilRenda } from '../tipos';
 import { SeletorMeses } from './Onboarding';
@@ -47,6 +48,10 @@ export function Configuracoes() {
             opcoes={[{ valor: 'reserva', rotulo: 'Reserva' }, { valor: 'proximoMes', rotulo: 'Próximo mês' }]} />
         </Secao>
 
+        <Secao titulo="Divisão das entradas" descricao="Quando uma entrada cai, o app cobre primeiro os fixos do mês e sugere dividir o resto assim.">
+          <DivisaoConfig valor={config.divisaoEntrada ?? PERCENTUAIS_PADRAO} sugerir={config.sugerirDivisao ?? true} />
+        </Secao>
+
         <Secao titulo="Contas" descricao="Onde o dinheiro fica parado e disponível."><CadastroContas /></Secao>
         <Secao titulo="Cartões de crédito"><CadastroCartoes /></Secao>
         <Secao titulo="Fontes de renda"><CadastroFontes /></Secao>
@@ -70,5 +75,33 @@ export function Configuracoes() {
         </Secao>
       </div>
     </Tela>
+  );
+}
+
+function DivisaoConfig({ valor, sugerir }: { valor: Percentuais; sugerir: boolean }) {
+  const [p, setP] = useState<Percentuais>(valor);
+  const soma = p.reserva + p.investimentos + p.metas + p.livre;
+  const campo = (k: keyof Percentuais, rot: string) => (
+    <label className="flex items-center justify-between gap-3 px-4 py-2.5">
+      <span className="font-semibold">{rot}</span>
+      <span className="flex items-center gap-1">
+        <input inputMode="numeric" value={String(p[k])} aria-label={`${rot} em %`}
+          onChange={(e) => { const n = Number(e.target.value.replace(/\D/g, '').slice(0, 3)) || 0; const novo = { ...p, [k]: n }; setP(novo); if (percentuaisValidos(novo)) repositorio.salvarConfig({ divisaoEntrada: novo }); }}
+          className="w-16 rounded-xl border border-borda bg-fundo px-2 py-1.5 text-right text-base font-bold" />
+        <span className="text-texto-2">%</span>
+      </span>
+    </label>
+  );
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="divide-y divide-borda rounded-2xl border border-borda bg-superficie">
+        {campo('reserva', 'Reserva')}{campo('investimentos', 'Investimentos')}{campo('metas', 'Metas')}{campo('livre', 'Livre para gastar')}
+      </div>
+      {soma !== 100 && <p className="text-sm font-semibold text-saida">A soma está em {soma}%. Ajuste para 100% para salvar.</p>}
+      <label className="flex items-center gap-3 rounded-2xl bg-superficie px-4 py-3">
+        <input type="checkbox" checked={sugerir} onChange={(e) => repositorio.salvarConfig({ sugerirDivisao: e.target.checked })} className="h-5 w-5 accent-[var(--color-destaque)]" />
+        <span className="font-bold">Sugerir ao lançar uma entrada que caiu</span>
+      </label>
+    </div>
   );
 }

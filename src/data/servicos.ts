@@ -4,8 +4,10 @@ import { diasNoMes, hojeISO, mesDe, somarDias, somarMeses } from '../calculos/da
 import { dataDaOcorrencia, gerarPrevistosDoMes } from '../calculos/recorrencias';
 import { calcularFaturas, faturaDaCompra, gerarParcelas, proximaFaturaAPagar, vencimentoDaFatura, type Fatura } from '../calculos/cartao';
 import { aprenderPalavra } from '../calculos/parser';
+import { alertaDeCaixa, dividirEntrada, livrePorDia, PERCENTUAIS_PADRAO, saldoDasContas, totaisDoMes, type AlertaCaixa, type Divisao, type LivrePorDia, type TotaisMes } from '../calculos/orcamento';
+import { avisarEntradaRecebida } from './eventos';
 import { saldosDoMes, type ResumoMes, type SaldoDia } from '../calculos/saldos';
-import type { Cartao, Centavos, Certeza, DataISO, Frequencia, Id, Lancamento, Meta, MesRef, Recorrencia } from '../tipos';
+import type { Cartao, Centavos, Certeza, Conta, DataISO, Frequencia, Id, Lancamento, Meta, MesRef, Recorrencia } from '../tipos';
 
 /** Primeiro dia em que você informou saldo (início do uso do app). */
 export async function dataDeInicio(): Promise<DataISO> {
@@ -125,6 +127,12 @@ export interface OpcoesNovo {
  * Devolve uma função que desfaz tudo o que foi criado.
  */
 export async function criarLancamento(dados: Omit<Lancamento, 'id'>, op: OpcoesNovo = {}): Promise<() => Promise<void>> {
+  const desfazer = await criarLancamentoSemAviso(dados, op);
+  if (dados.tipo === 'entrada' && dados.certeza === 'garantida' && dados.status === 'realizado') avisarEntradaRecebida(dados.valor);
+  return desfazer;
+}
+
+async function criarLancamentoSemAviso(dados: Omit<Lancamento, 'id'>, op: OpcoesNovo): Promise<() => Promise<void>> {
   const cartao = dados.cartaoId ? await repositorio.cartoes.obter(dados.cartaoId) : undefined;
 
   if (op.repeticao) {
@@ -244,4 +252,139 @@ export async function resumoDosCartoes(): Promise<ResumoCartao[]> {
       melhorDia: cartao.diaFechamento >= 28 ? 1 : cartao.diaFechamento + 1,
     };
   });
+}
+
+// ---------- Fase 5: tela Hoje e Totais ----------
+
+const fimDoMes = (mes: MesRef) => `${mes}-${String(diasNoMes(mes)).padStart(2, '0')}`;
+
+/** Tudo o que existe desde o início do uso até o fim do mês (com os fixos já gerados). */
+async function lancamentosAte(mes: MesRef): Promise<{ inicio: DataISO; lancamentos: Lancamento[] }> {
+  const inicio = await dataDeInicio();
+  for (let m = mesDe(inicio) < mes ? mesDe(inicio) : mes; m <= mes; m = somarMeses(m, 1)) await garantirFixosDoMes(m);
+  const desde = inicio < `${mes}-01` ? inicio : `${mes}-01`;
+  return { inicio, lancamentos: await repositorio.lancamentos.porPeriodo(desde, fimDoMes(mes)) };
+}
+
+/**
+ * Dinheiro de partida do mês para o "livre por dia":
+ * - No primeiro mês de uso: o saldo que você informou nas contas.
+ * - Depois: a sobra do mês anterior se a configuração for "Próximo mês"; se for "Reserva", só conta se for negativa.
+ * - Menos a fatura que já estava aberta antes do app (é dinheiro já comprometido).
+ */
+function calcularPartida(
+  mes: MesRef, inicioApp: DataISO, destino: 'reserva' | 'proximoMes',
+  contas: Conta[], lancamentos: Lancamento[], cartoes: Cartao[], hoje: DataISO,
+): { partida: Centavos; sobraAnterior: Centavos } {
+  const vespera = somarDias(`${mes}-01`, -1);
+  const virada = saldoDasContas(contas, lancamentos, cartoes, vespera, true).total;
+  const novas = contas.filter((c) => c.dataSaldoInicial >= `${mes}-01` && c.dataSaldoInicial <= hoje).reduce((s, c) => s + c.saldoInicial, 0);
+  const primeiroMes = mesDe(inicioApp) === mes;
+  const daVirada = primeiroMes || destino === 'proximoMes' ? virada : Math.min(0, virada);
+  const porCartao = new Map(cartoes.map((c) => [c.id, c]));
+  const divida = lancamentos.filter((l) => l.saldoAnterior && l.cartaoId && porCartao.has(l.cartaoId)
+    && vencimentoDaFatura(l.faturaRef ?? mesDe(l.data), porCartao.get(l.cartaoId)!) <= fimDoMes(mes)).reduce((s, l) => s + l.valor, 0);
+  return { partida: daVirada + novas - divida, sobraAnterior: primeiroMes ? 0 : virada };
+}
+
+export interface ItemChegando {
+  tipo: 'lancamento' | 'fatura';
+  data: DataISO;
+  atrasado: boolean;
+  lancamento?: Lancamento;
+  fatura?: Fatura;
+}
+
+export interface ResumoHoje {
+  hoje: DataISO;
+  livre: LivrePorDia;
+  alerta: AlertaCaixa | null;
+  saldoHoje: { total: Centavos; porConta: Record<Id, Centavos> };
+  fimDoMes: Centavos;
+  chegando: ItemChegando[];
+  totais: TotaisMes;
+  /** Fixos ainda não pagos + faturas a vencer até o fim do mês. */
+  faltaPagar: Centavos;
+  reserva: Centavos;
+  /** Sobra do mês passado ainda na conta (quando o destino é a reserva). */
+  sobraParaGuardar: Centavos;
+}
+
+export async function resumoHoje(diasAFrente = 10): Promise<ResumoHoje> {
+  const hoje = hojeISO();
+  const mes = mesDe(hoje);
+  const ate = mesDe(somarDias(hoje, diasAFrente));
+  const [{ inicio, lancamentos }, contas, cartoes, config, metas] = await Promise.all([
+    lancamentosAte(ate), repositorio.contas.listar(), repositorio.cartoes.listar(), repositorio.obterConfig(), repositorio.metas.listar(),
+  ]);
+  const doMes = lancamentos.filter((l) => l.data.startsWith(mes));
+  const { partida, sobraAnterior } = calcularPartida(mes, inicio, config.destinoSobraMes, contas, lancamentos, cartoes, hoje);
+  const faturas = calcularFaturas(lancamentos, cartoes);
+  const limite = somarDias(hoje, diasAFrente);
+
+  const chegando: ItemChegando[] = [
+    ...lancamentos.filter((l) => l.status === 'previsto' && l.data <= limite && l.data >= `${mes}-01` && l.tipo !== 'transferencia' && !(l.tipo === 'saida' && l.cartaoId))
+      .map((l) => ({ tipo: 'lancamento' as const, data: l.data, atrasado: l.data < hoje, lancamento: l })),
+    ...faturas.filter((f) => f.restante > 0 && f.vencimento <= limite && f.vencimento >= `${mes}-01`)
+      .map((f) => ({ tipo: 'fatura' as const, data: f.vencimento, atrasado: f.vencimento < hoje, fatura: f })),
+  ].sort((a, b) => (a.data < b.data ? -1 : a.data > b.data ? 1 : 0));
+
+  const fim = fimDoMes(mes);
+  const faltaPagar = doMes.filter((l) => l.status === 'previsto' && l.tipo !== 'entrada' && l.contaId && !l.cartaoId).reduce((s, l) => s + l.valor, 0)
+    + faturas.filter((f) => f.vencimento >= `${mes}-01` && f.vencimento <= fim).reduce((s, f) => s + f.restante, 0);
+  const reservaId = metas.find((m) => m.tipo === 'reserva_emergencia')?.id;
+  const reserva = lancamentos.filter((l) => l.tipo === 'transferencia' && l.destino?.id === reservaId && l.data <= hoje).reduce((s, l) => s + l.valor, 0);
+
+  return {
+    hoje,
+    livre: livrePorDia(doMes, hoje, partida),
+    alerta: alertaDeCaixa(contas, lancamentos, cartoes, hoje),
+    saldoHoje: saldoDasContas(contas, lancamentos, cartoes, hoje),
+    fimDoMes: saldoDasContas(contas, lancamentos, cartoes, fim).total,
+    chegando,
+    totais: totaisDoMes(doMes, mes, hoje, inicio),
+    faltaPagar,
+    reserva,
+    sobraParaGuardar: config.destinoSobraMes === 'reserva' && sobraAnterior > 0 ? sobraAnterior : 0,
+  };
+}
+
+/** 5.7: como dividir uma entrada que acabou de cair (ela já está salva). */
+export async function sugerirDivisao(valor: Centavos): Promise<Divisao> {
+  const hoje = hojeISO();
+  const mes = mesDe(hoje);
+  const [{ lancamentos }, contas, cartoes, config] = await Promise.all([
+    lancamentosAte(mes), repositorio.contas.listar(), repositorio.cartoes.listar(), repositorio.obterConfig(),
+  ]);
+  const fim = fimDoMes(mes);
+  const aPagar = lancamentos.filter((l) => l.status === 'previsto' && l.tipo !== 'entrada' && l.contaId && !l.cartaoId && l.data >= hoje && l.data <= fim)
+    .reduce((s, l) => s + l.valor, 0)
+    + calcularFaturas(lancamentos, cartoes).filter((f) => f.vencimento >= hoje && f.vencimento <= fim).reduce((s, f) => s + f.restante, 0);
+  const tinhaAntes = saldoDasContas(contas, lancamentos, cartoes, hoje, true).total - valor;
+  return dividirEntrada(valor, Math.max(0, aPagar - Math.max(0, tinhaAntes)), config.divisaoEntrada ?? PERCENTUAIS_PADRAO);
+}
+
+/** Guarda na reserva agora (economia de hoje). */
+export async function guardarNaReserva(valor: Centavos): Promise<void> {
+  if (valor <= 0) return;
+  const [reserva, config, contas] = await Promise.all([garantirReserva(), repositorio.obterConfig(), repositorio.contas.listar()]);
+  const contaId = config.contaPadraoId ?? contas[0]?.id;
+  if (!contaId) return;
+  await repositorio.lancamentos.criar({
+    tipo: 'transferencia', valor, data: hojeISO(), descricao: `Guardado: ${reserva.nome}`, contaId,
+    destino: { tipo: 'meta', id: reserva.id }, certeza: 'garantida', status: 'realizado',
+  });
+}
+
+export interface TotaisTela { mes: MesRef; totais: TotaisMes; ano: { mes: MesRef; totais: TotaisMes }[] }
+
+export async function totaisDaTela(mes: MesRef): Promise<TotaisTela> {
+  const hoje = hojeISO();
+  const ano = mes.slice(0, 4);
+  const ultimo = mes > mesDe(hoje) ? mes : mesDe(hoje) > `${ano}-12` ? `${ano}-12` : mesDe(hoje);
+  const { inicio } = await lancamentosAte(ultimo < mes ? mes : ultimo);
+  const doAno = await repositorio.lancamentos.porPeriodo(`${ano}-01-01`, `${ano}-12-31`);
+  const meses = Array.from({ length: 12 }, (_, i) => `${ano}-${String(i + 1).padStart(2, '0')}`).filter((m) => m <= ultimo);
+  const por = (m: MesRef) => totaisDoMes(doAno.filter((l) => l.data.startsWith(m)), m, hoje, inicio);
+  return { mes, totais: por(mes), ano: meses.map((m) => ({ mes: m, totais: por(m) })) };
 }
