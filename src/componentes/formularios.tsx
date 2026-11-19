@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { repositorio } from '../data/repositorio';
 import { useConsulta } from '../data/useConsulta';
+import { excluirRecorrencia, reaplicarRecorrencia } from '../data/servicos';
 import { hojeISO } from '../calculos/datas';
 import { formatarTaxa, textoParaTaxa } from '../calculos/dinheiro';
 import { separarPalavrasChave } from '../calculos/texto';
@@ -18,7 +19,7 @@ import { Botao, CampoEscolha, CampoNumero, CampoTexto, CampoValor, Segmentos } f
 type PropsForm<T> = { item?: T; aoFechar: () => void };
 
 /** Rodapé com Salvar, Cancelar e (na edição) Excluir com confirmação em dois toques. */
-function Acoes({ aoSalvar, aoCancelar, aoExcluir, bloqueioExclusao }: {
+export function Acoes({ aoSalvar, aoCancelar, aoExcluir, bloqueioExclusao }: {
   aoSalvar: () => void; aoCancelar: () => void; aoExcluir?: () => void; bloqueioExclusao?: string;
 }) {
   const [confirmar, setConfirmar] = useState(false);
@@ -221,8 +222,8 @@ export function FormRecorrencia({ item, aoFechar }: PropsForm<Recorrencia>) {
     const e = validarRecorrencia(dados);
     setErros(e);
     if (!valido(e)) return;
-    if (item) await repositorio.recorrencias.salvar({ ...item, ...dados });
-    else await repositorio.recorrencias.criar(dados);
+    const salvo = item ? await repositorio.recorrencias.salvar({ ...item, ...dados }) : await repositorio.recorrencias.criar(dados);
+    await reaplicarRecorrencia(salvo.id);
     aoFechar();
   }
 
@@ -262,7 +263,7 @@ export function FormRecorrencia({ item, aoFechar }: PropsForm<Recorrencia>) {
         </label>
       )}
       <Acoes aoSalvar={salvar} aoCancelar={aoFechar}
-        aoExcluir={item ? async () => { await repositorio.recorrencias.excluir(item.id); aoFechar(); } : undefined} />
+        aoExcluir={item ? async () => { await excluirRecorrencia(item.id); aoFechar(); } : undefined} />
     </div>
   );
 }

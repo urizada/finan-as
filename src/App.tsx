@@ -32,6 +32,7 @@ export function App() {
   const [lancando, setLancando] = useState(false);
   const fechar = useCallback(() => setLancando(false), []);
   const config = useConsulta(() => repositorio.obterConfig(), []);
+  useEffect(() => setLancando(false), [rota]);
 
   useEffect(() => {
     const tema = config?.tema ?? 'claro';

@@ -28,7 +28,9 @@ export interface ColecaoLancamentos extends Colecao<Lancamento> {
   porMes(mes: MesRef): Promise<Lancamento[]>;
   porFatura(cartaoId: Id, faturaRef: MesRef): Promise<Lancamento[]>;
   porGrupoParcela(grupoId: Id): Promise<Lancamento[]>;
+  porRecorrencia(recorrenciaId: Id): Promise<Lancamento[]>;
   criarVarios(itens: Novo<Lancamento>[]): Promise<Lancamento[]>;
+  excluirVarios(ids: Id[]): Promise<void>;
 }
 
 export interface Backup {
@@ -127,7 +129,14 @@ export function criarRepositorioDexie(nomeBanco = 'financas'): Repositorio {
       db.lancamentos.where({ cartaoId, faturaRef }).toArray(),
     porGrupoParcela: (grupoId) =>
       db.lancamentos.where('parcela.grupoId').equals(grupoId).sortBy('parcela.numero'),
+    porRecorrencia: (recorrenciaId) => db.lancamentos.where('recorrenciaId').equals(recorrenciaId).toArray(),
+    async excluirVarios(ids) {
+      if (ids.length === 0) return;
+      await db.lancamentos.bulkDelete(ids);
+      avisar();
+    },
     async criarVarios(itens) {
+      if (itens.length === 0) return [];
       const salvos = itens.map((i) => ({ ...i, id: i.id ?? novoId() }) as Lancamento);
       await db.lancamentos.bulkAdd(salvos);
       avisar();

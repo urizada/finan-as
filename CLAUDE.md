@@ -256,6 +256,10 @@ Cada fase termina com o app rodando e os testes passando.
 - **Contas fixas na data:** quando chega o dia de uma recorrência de saída, o valor já é descontado do saldo projetado da conta corrente, mesmo antes de ser marcado como pago. Um toque marca o lançamento como `realizado` (o mesmo lançamento muda de status, não cria outro).
 - **Tema claro é o padrão**; escuro opcional, com troca nas Configurações.
 - **Barra inferior:** Hoje · Saldos · (+) · Totais · Mais (substitui Home · Lançamentos · Previsão · Mais).
+- **Saldo projetado (tela Saldos):** soma o saldo inicial de cada conta a partir de `dataSaldoInicial` (inclusive) com todos os lançamentos da conta, pagos ou previstos. Entradas só entram se forem `garantida`; prováveis e possíveis aparecem na grade, mas não no saldo. Compras no cartão não mexem na conta: o dinheiro sai no pagamento da fatura (Fase 4).
+- **Cores do saldo:** vermelho = negativo; amarelo = o saldo do dia não cobre o que ainda vai sair da conta até o fim do mês; verde = cobre.
+- **Fixos:** os previstos de cada mês são criados quando o mês é aberto. No primeiro mês, fixos com dia anterior ao início do uso entram como já pagos. Editar um fixo refaz os previstos ainda não pagos deste mês em diante; excluir apaga esses previstos e mantém o histórico pago.
+- **Lançamento futuro ou entrada incerta** é salvo como `previsto` por padrão; o usuário pode marcar "já foi pago" / "já caiu".
 - **Referência visual:** o usuário enviou prints de um app de finanças que gosta (grade de saldos dia a dia, totais do mês, economizado). Serve de inspiração, não de cópia: a ideia é ser mais visual e mais simples.
 
 ## 9. Fora da v1 (já previsto na arquitetura)

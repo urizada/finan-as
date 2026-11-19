@@ -99,7 +99,7 @@ export function CampoEscolha<T extends string>({ rotulo, valor, aoMudar, opcoes,
   return (
     <Campo rotulo={rotulo} erro={erro} ajuda={ajuda} id={id}>
       <select id={id} className={`${classeEntrada} appearance-none`} value={valor} onChange={(e) => aoMudar(e.target.value as T)}>
-        {valor === '' && <option value="">Escolha…</option>}
+        {valor === '' && !opcoes.some((o) => o.valor === '') && <option value="">Escolha…</option>}
         {opcoes.map((o) => <option key={o.valor} value={o.valor}>{o.rotulo}</option>)}
       </select>
     </Campo>

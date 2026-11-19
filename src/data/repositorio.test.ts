@@ -51,3 +51,15 @@ describe('repositorio (Dexie)', () => {
     expect(avisos).toBe(1);
   });
 });
+
+describe('serviços de fixos', () => {
+  it('busca e exclui por recorrência', async () => {
+    await repo.lancamentos.criarVarios([
+      { ...base('2026-11-05', 100), recorrenciaId: 'r1' }, { ...base('2026-12-05', 100), recorrenciaId: 'r1' }, base('2026-11-06', 1),
+    ]);
+    const ls = await repo.lancamentos.porRecorrencia('r1');
+    expect(ls).toHaveLength(2);
+    await repo.lancamentos.excluirVarios(ls.map((l) => l.id));
+    expect(await repo.lancamentos.listar()).toHaveLength(1);
+  });
+});
