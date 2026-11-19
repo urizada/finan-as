@@ -95,6 +95,8 @@ export interface Recorrencia {
   ativa: boolean;
   /** Data da última ocorrência. */
   fim?: DataISO;
+  /** Datas que você excluiu só daquela vez (não são criadas de novo). */
+  excecoes?: DataISO[];
 }
 
 export interface Cartao {

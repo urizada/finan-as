@@ -9,7 +9,8 @@ import { Lancamentos } from './telas/Lancamentos';
 import { Mais } from './telas/Mais';
 import { Saldos } from './telas/Saldos';
 import { Previsao, Totais } from './telas/Totais';
-import { Cartoes, Investimentos, Metas, ParaOndeFoi } from './telas/Secundarias';
+import { Investimentos, Metas, ParaOndeFoi } from './telas/Secundarias';
+import { Cartoes } from './telas/Cartoes';
 import { Configuracoes } from './telas/Configuracoes';
 import { Onboarding } from './telas/Onboarding';
 

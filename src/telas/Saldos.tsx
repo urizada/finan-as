@@ -57,8 +57,18 @@ export function Saldos() {
         <div className="mt-2 grid grid-cols-2 gap-2">
           <Resumo rotulo={diaHoje ? 'Saldo hoje' : 'Início do mês'} valor={diaHoje?.saldo ?? grade?.dias.find((d) => d.saldo !== null)?.saldo ?? null} />
           <Resumo rotulo="Fim do mês" valor={ultimo?.saldo ?? null} estado={ultimo?.estado ?? null}
-            extra={provaveisFim > 0 ? `+${formatarReais(provaveisFim)} se as prováveis caírem` : undefined} />
+            extra={provaveisFim > 0 ? `+${formatarReais(provaveisFim)} se o “talvez” cair` : undefined} />
         </div>
+        {grade?.resumo && (
+          <div className="mt-2 grid grid-cols-[1fr_auto_1fr_auto_1fr] items-center gap-1 rounded-2xl bg-superficie-2/70 px-3 py-2 text-center text-xs">
+            <span><span className="block text-texto-2">{diaHoje ? 'Começou' : 'Início'}</span><b className="tabular-nums">{formatarReais(grade.resumo.inicio)}</b></span>
+            <span className="text-texto-2">+</span>
+            <span><span className="block text-texto-2">Entra</span><b className="tabular-nums text-entrada">{formatarReais(grade.resumo.entradas)}</b></span>
+            <span className="text-texto-2">−</span>
+            <span><span className="block text-texto-2">Sai{grade.resumo.faturas > 0 ? '*' : ''}</span><b className="tabular-nums text-saida">{formatarReais(grade.resumo.saidas)}</b></span>
+            {grade.resumo.faturas > 0 && <span className="col-span-5 text-[11px] text-texto-2">*inclui {formatarReais(grade.resumo.faturas)} de faturas de cartão que vencem no mês</span>}
+          </div>
+        )}
         <div className="mt-3 flex gap-1.5" role="tablist" aria-label="Coluna exibida">
           {COLUNAS.map((c) => (
             <button key={c.id} type="button" role="tab" aria-selected={coluna === c.id} onClick={() => setColuna(c.id)}
@@ -182,8 +192,8 @@ function Legenda({ coluna }: { coluna: Coluna }) {
         {item('bg-saldo-apertado', 'não cobre o que falta pagar')}
         {item('bg-saldo-negativo', 'negativo')}
       </div>
-      <p>O saldo parte do que você tem na conta e desconta, em cada dia, os fixos, os gastos e as faturas dos cartões no vencimento. Só soma entradas certas.</p>
-      {coluna === 'entradas' && <p>Valor sublinhado: inclui entrada provável ou possível (não está no saldo).</p>}
+      <p>O saldo parte do que você tem na conta e soma as entradas certas e prováveis; desconta, em cada dia, os fixos, os gastos, as economias e as faturas dos cartões no vencimento. Entradas “talvez” ficam de fora.</p>
+      {coluna === 'entradas' && <p>Valor sublinhado: inclui entrada “talvez”, que não está no saldo.</p>}
       {coluna === 'cartao' && <p>Compras do dia no cartão. Elas saem da conta no vencimento da fatura (marcado como “fatura” em Saídas).</p>}
       {coluna === 'fixos' && <p className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-alerta" />fixo do dia ainda não marcado como pago.</p>}
     </div>

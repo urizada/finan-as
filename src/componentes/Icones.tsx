@@ -26,3 +26,9 @@ export const IconeSeta = ({ className }: P) => (
 export const IconeVoltar = ({ className }: P) => (
   <svg {...base} className={className} aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg>
 );
+export const IconeLixeira = ({ className }: P) => (
+  <svg {...base} className={className} aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></svg>
+);
+export const IconeCartao = ({ className }: P) => (
+  <svg {...base} className={className} aria-hidden="true"><rect x="3" y="5.5" width="18" height="13" rx="2.5" /><path d="M3 10h18M7 15h4" /></svg>
+);

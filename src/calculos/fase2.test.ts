@@ -33,6 +33,11 @@ describe('recorrências', () => {
     expect(nov.map((l) => l.status)).toEqual(['realizado', 'previsto']);
     expect(gerarPrevistosDoMes(recs, '2026-10', [], '2026-11-19')).toEqual([]);
   });
+  it('pula as datas excluídas só daquela vez', () => {
+    const r = rec('aluguel', 5, 150000, { excecoes: ['2026-12-05'] });
+    expect(gerarPrevistosDoMes([r], '2026-12', [], '2026-11-01')).toEqual([]);
+    expect(gerarPrevistosDoMes([r], '2027-01', [], '2026-11-01')).toHaveLength(1);
+  });
   it('respeita a data de fim e leva o cartão e a certeza', () => {
     const r = rec('curso', 10, 5000, { fim: '2026-12-01' });
     expect(gerarPrevistosDoMes([r], '2026-12', [], '2026-11-01')).toEqual([]);
@@ -50,7 +55,8 @@ describe('efeito na conta', () => {
     expect(efeitoNaConta(lanc('2026-11-01', 'saida', 100))).toBe(-100);
     expect(efeitoNaConta(lanc('2026-11-01', 'saida', 100, { cartaoId: 'k', contaId: undefined }))).toBe(0);
     expect(efeitoNaConta(lanc('2026-11-01', 'entrada', 100))).toBe(100);
-    expect(efeitoNaConta(lanc('2026-11-01', 'entrada', 100, { certeza: 'provavel' }))).toBe(0);
+    expect(efeitoNaConta(lanc('2026-11-01', 'entrada', 100, { certeza: 'provavel' }))).toBe(100);
+    expect(efeitoNaConta(lanc('2026-11-01', 'entrada', 100, { certeza: 'possivel' }))).toBe(0);
     expect(efeitoNaConta(lanc('2026-11-01', 'transferencia', 100))).toBe(-100);
   });
   it('estado do saldo', () => {
@@ -70,7 +76,8 @@ describe('saldos do mês', () => {
       lanc('2026-11-18', 'entrada', 56517),
       lanc('2026-11-20', 'saida', 150000, { recorrenciaId: 'r', status: 'previsto' }),
       lanc('2026-11-21', 'saida', 30000, { cartaoId: 'k', contaId: undefined }),
-      lanc('2026-11-25', 'entrada', 100000, { certeza: 'provavel', status: 'previsto' }),
+      lanc('2026-11-25', 'entrada', 100000, { certeza: 'possivel', status: 'previsto' }),
+      lanc('2026-11-26', 'entrada', 5000, { certeza: 'provavel', status: 'previsto' }),
     ];
     const g = saldosDoMes('2026-11', [conta], ls).dias;
     expect(g).toHaveLength(30);
@@ -82,9 +89,10 @@ describe('saldos do mês', () => {
     expect(g[19].fixoPendente).toBe(true);
     expect(g[20].cartao).toBe(30000);             // 21: cartão aparece mas não mexe
     expect(g[20].saldo).toBe(-13483);
-    expect(g[24].entradas).toBe(100000);          // 25: provável aparece...
+    expect(g[24].entradas).toBe(100000);          // 25: "talvez" aparece...
     expect(g[24].entradasIncertas).toBe(100000);
     expect(g[24].saldo).toBe(-13483);             // ...mas não entra no saldo
+    expect(g[25].saldo).toBe(-8483);              // 26: provável entra na previsão
   });
 
   it('fica amarelo quando o saldo não cobre o que ainda vai sair', () => {
@@ -209,10 +217,24 @@ describe('cartão no saldo projetado', () => {
     const ls = [compra('2026-11-19', 120000, { faturaRef: '2026-12', saldoAnterior: true })];
     expect(saldosDoMes('2026-12', [conta], ls, [nubank]).dias[9].saldo).toBe(180000);
   });
-  it('saldo com entradas prováveis aparece à parte', () => {
-    const ls = [lanc('2026-11-20', 'entrada', 50000, { certeza: 'provavel', status: 'previsto' }), lanc('2026-11-21', 'entrada', 10000)];
+  it('entrada "talvez" aparece à parte; provável entra', () => {
+    const ls = [lanc('2026-11-20', 'entrada', 50000, { certeza: 'possivel', status: 'previsto' }), lanc('2026-11-21', 'entrada', 10000, { certeza: 'provavel', status: 'previsto' })];
     const d = saldosDoMes('2026-11', [conta], ls).dias;
     expect(d[20].saldo).toBe(310000);
     expect(d[20].saldoComIncertas).toBe(360000);
+  });
+  it('resumo do mês fecha a conta: início + entradas − saídas = fim', () => {
+    const ls = [
+      compra('2026-11-19', 30000),
+      lanc('2026-11-20', 'entrada', 400000), lanc('2026-11-28', 'saida', 100000, { recorrenciaId: 'r', status: 'previsto' }),
+      lanc('2026-12-05', 'entrada', 1700000, { certeza: 'provavel', status: 'previsto' }), lanc('2026-12-15', 'saida', 900000),
+      lanc('2026-12-20', 'entrada', 99999, { certeza: 'possivel', status: 'previsto' }),
+    ];
+    const nov = saldosDoMes('2026-11', [conta], ls, [nubank]).resumo!;
+    expect(nov).toMatchObject({ inicio: 300000, entradas: 400000, saidas: 100000, faturas: 0, fim: 600000 });
+    const dez = saldosDoMes('2026-12', [conta], ls, [nubank]).resumo!;
+    expect(dez).toMatchObject({ inicio: 600000, entradas: 1700000, saidas: 930000, faturas: 30000, talvez: 99999 });
+    expect(dez.fim).toBe(dez.inicio + dez.entradas - dez.saidas);
+    expect(saldosDoMes('2026-10', [conta], ls, [nubank]).resumo).toBeNull();
   });
 });

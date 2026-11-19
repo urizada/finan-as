@@ -1,7 +1,7 @@
 // Peças da Fase 2: formulário de lançamento, linha da lista e seletor de mês.
 import { useId, useState } from 'react';
 import { repositorio } from '../data/repositorio';
-import { criarLancamento, excluirParcelas, marcarComoPago } from '../data/servicos';
+import { criarLancamento, excluirLancamento, marcarComoPago, type Escopo } from '../data/servicos';
 import type { Cadastros } from '../data/useCadastros';
 import { formatarData, hojeISO, nomeDoMes, paraISO, somarMeses } from '../calculos/datas';
 import { faturaDaCompra, vencimentoDaFatura } from '../calculos/cartao';
@@ -13,7 +13,7 @@ import { NOME_OUTROS_ENTRADA, NOME_OUTROS_SAIDA, ROTULO_CERTEZA } from '../calcu
 import { valido, type Erros } from '../calculos/validacoes';
 import type { Certeza, DataISO, Frequencia, Lancamento, MesRef } from '../tipos';
 import { Acoes } from './formularios';
-import { IconeSeta, IconeVoltar } from './Icones';
+import { IconeLixeira, IconeSeta, IconeVoltar } from './Icones';
 import { Campo, CampoEscolha, CampoTexto, CampoValor, Segmentos } from './ui';
 
 export function SeletorMes({ mes, aoMudar }: { mes: MesRef; aoMudar: (m: MesRef) => void }) {
@@ -97,15 +97,84 @@ export function CampoVezes({ vezes, aoMudar, inicio, frequencia }: {
   );
 }
 
+/** Botão de excluir sempre visível. Em parcelado/repetição pergunta: só este, este e os próximos, ou todos. */
+export function ExcluirLancamento({ l, aoExcluido }: { l: Lancamento; aoExcluido: () => void }) {
+  const [aberto, setAberto] = useState(false);
+  const excluir = async (e: Escopo) => { await excluirLancamento(l, e); aoExcluido(); };
+  const op = (rotulo: string, e: Escopo, sub?: string) => (
+    <button key={e} type="button" onClick={() => excluir(e)}
+      className="flex w-full flex-col items-start rounded-2xl border border-saida/40 bg-superficie px-4 py-3 text-left">
+      <span className="font-bold text-saida">{rotulo}</span>
+      {sub && <span className="text-sm text-texto-2">{sub}</span>}
+    </button>
+  );
+  if (!aberto) return (
+    <button type="button" onClick={() => setAberto(true)}
+      className="flex items-center justify-center gap-2 rounded-2xl border border-saida/40 py-3 font-bold text-saida">
+      <IconeLixeira className="h-5 w-5" /> Excluir
+    </button>
+  );
+  const p = l.parcela;
+  return (
+    <div className="flex flex-col gap-2 rounded-2xl bg-saldo-negativo/50 p-3">
+      <p className="px-1 text-sm font-bold">{p ? `Esta é a parcela ${p.numero} de ${p.total}. O que excluir?` : l.recorrenciaId ? 'Este lançamento se repete. O que excluir?' : 'Excluir este lançamento?'}</p>
+      {p ? (
+        <>
+          {op('Só esta parcela', 'este')}
+          {p.numero < p.total && op(`Esta e as próximas (${p.total - p.numero + 1})`, 'proximos', `Parcelas ${p.numero} a ${p.total}`)}
+          {op(`Todas as ${p.total} parcelas`, 'todos', 'A compra inteira')}
+        </>
+      ) : l.recorrenciaId ? (
+        <>
+          {op('Só esta vez', 'este', formatarData(l.recorrenciaData ?? l.data))}
+          {op('Esta e as próximas', 'proximos', 'Para de repetir a partir daqui; o que já passou fica')}
+          {op('Todas', 'todos', 'Apaga a repetição inteira, inclusive as que já passaram')}
+        </>
+      ) : op('Excluir', 'este')}
+      <button type="button" onClick={() => setAberto(false)} className="py-2 text-sm font-bold text-texto-2">Cancelar</button>
+    </div>
+  );
+}
+
 type Situacao = 'caiu' | 'vai';
 const CHANCES: { valor: Certeza; rotulo: string }[] = [
   { valor: 'garantida', rotulo: 'Certo' }, { valor: 'provavel', rotulo: 'Provável' }, { valor: 'possivel', rotulo: 'Talvez' },
 ];
 
-export function FormLancamento({ item, cad, dataInicial, inicial, aoFechar }: {
-  item?: Lancamento; cad: Cadastros; dataInicial?: DataISO; inicial?: InicialLancamento; aoFechar: () => void;
+/** Modo vindo do botão +: trava o tipo e o meio de pagamento. */
+export type ModoLancamento = 'entrada' | 'saida' | 'cartao';
+
+export function FormLancamento({ item, cad, dataInicial, inicial, modo, aoFechar }: {
+  item?: Lancamento; cad: Cadastros; dataInicial?: DataISO; inicial?: InicialLancamento; modo?: ModoLancamento; aoFechar: () => void;
 }) {
-  const base = item ?? inicial;
+  if (item?.tipo === 'transferencia') return <DetalheTransferencia l={item} cad={cad} aoFechar={aoFechar} />;
+  return <FormLancamentoEdicao item={item} cad={cad} dataInicial={dataInicial} inicial={inicial} modo={modo} aoFechar={aoFechar} />;
+}
+
+/** Pagamento de fatura ou economia: mostra o que é e deixa excluir. */
+function DetalheTransferencia({ l, cad, aoFechar }: { l: Lancamento; cad: Cadastros; aoFechar: () => void }) {
+  const fatura = !!l.cartaoId;
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="rounded-2xl bg-superficie-2 px-4 py-3">
+        <p className="font-bold">{l.descricao}</p>
+        <p className="text-2xl font-extrabold tabular-nums">−{formatarReais(l.valor)}</p>
+        <p className="text-sm text-texto-2">{formatarData(l.data)} · saiu de {cad.conta(l.contaId)?.nome ?? 'conta'}</p>
+        <p className="mt-2 text-sm text-texto-2">
+          {fatura ? 'Pagamento de fatura. As compras já foram contadas; excluir aqui deixa a fatura em aberto de novo.'
+            : 'Dinheiro guardado. Excluir devolve o valor para o saldo da conta.'}
+        </p>
+      </div>
+      <ExcluirLancamento l={l} aoExcluido={aoFechar} />
+      <button type="button" onClick={aoFechar} className="py-2 font-bold text-texto-2">Fechar</button>
+    </div>
+  );
+}
+
+function FormLancamentoEdicao({ item, cad, dataInicial, inicial, modo, aoFechar }: {
+  item?: Lancamento; cad: Cadastros; dataInicial?: DataISO; inicial?: InicialLancamento; modo?: ModoLancamento; aoFechar: () => void;
+}) {
+  const base = item ?? (modo ? { ...inicial, tipo: modo === 'entrada' ? 'entrada' as const : 'saida' as const } : inicial);
   const hoje = hojeISO();
   const [tipo, setTipo] = useState<'saida' | 'entrada'>(base?.tipo === 'entrada' ? 'entrada' : 'saida');
   const [valor, setValor] = useState(base?.valor ?? 0);
@@ -132,8 +201,9 @@ export function FormLancamento({ item, cad, dataInicial, inicial, aoFechar }: {
   const outros = catsDoTipo.find((c) => c.nome === (entrada ? NOME_OUTROS_ENTRADA : NOME_OUTROS_SAIDA));
   const catDaFonte = fonte ? catsDoTipo.find((c) => normalizar(c.nome) === normalizar(fonte.nome)) : undefined;
   const categoriaEscolhida = catsDoTipo.some((c) => c.id === categoriaId) ? categoriaId : (entrada ? catDaFonte?.id : undefined) ?? outros?.id ?? '';
-  const ondePadrao = `conta:${cad.contaPadraoId ?? cad.contas[0]?.id ?? ''}`;
-  const ondeEscolhido = onde && !(entrada && onde.startsWith('cartao:')) ? onde : ondePadrao;
+  const ondePadrao = modo === 'cartao' ? `cartao:${cad.cartoes[0]?.id ?? ''}` : `conta:${cad.contaPadraoId ?? cad.contas[0]?.id ?? ''}`;
+  const ondeValido = (o: string) => !!o && !(entrada && o.startsWith('cartao:')) && !(modo === 'cartao' && !o.startsWith('cartao:')) && !(modo === 'saida' && o.startsWith('cartao:'));
+  const ondeEscolhido = ondeValido(onde) ? onde : ondePadrao;
   const cartao = !entrada && ondeEscolhido.startsWith('cartao:') ? cad.cartao(ondeEscolhido.slice(7)) : undefined;
   const situacaoFinal: Situacao = situacao ?? (data > hoje ? 'vai' : 'caiu');
   const certezaFinal: Certeza = entrada ? (situacaoFinal === 'caiu' ? 'garantida' : chance) : 'garantida';
@@ -177,9 +247,15 @@ export function FormLancamento({ item, cad, dataInicial, inicial, aoFechar }: {
       className={`rounded-full px-3.5 py-2 text-sm font-bold ${ativo ? 'bg-texto text-fundo' : 'bg-superficie-2 text-texto'}`}>{rotulo}</button>
   );
   const opcoesOnde = [
-    ...cad.contas.map((c) => ({ valor: `conta:${c.id}`, rotulo: c.nome })),
-    ...(!entrada ? cad.cartoes.map((c) => ({ valor: `cartao:${c.id}`, rotulo: `Cartão ${c.nome}` })) : []),
+    ...(modo !== 'cartao' ? cad.contas.map((c) => ({ valor: `conta:${c.id}`, rotulo: c.nome })) : []),
+    ...(!entrada && modo !== 'saida' ? cad.cartoes.map((c) => ({ valor: `cartao:${c.id}`, rotulo: `Cartão ${c.nome}` })) : []),
   ];
+  if (modo === 'cartao' && cad.cartoes.length === 0) return (
+    <div className="flex flex-col gap-3">
+      <p className="rounded-2xl bg-superficie-2 px-4 py-4 text-sm">Você ainda não cadastrou nenhum cartão. Cadastre em Mais › Cartões e volte aqui.</p>
+      <a href="#cartoes" className="rounded-2xl bg-texto py-3.5 text-center font-bold text-fundo">Ir para Cartões</a>
+    </div>
+  );
   const campoCategoria = (
     <CampoEscolha rotulo="Categoria" valor={categoriaEscolhida} aoMudar={setCategoriaId}
       opcoes={catsDoTipo.map((c) => ({ valor: c.id, rotulo: `${c.icone} ${c.nome}` }))} />
@@ -198,7 +274,9 @@ export function FormLancamento({ item, cad, dataInicial, inicial, aoFechar }: {
           Parcela {parcela.numero} de {parcela.total}. O que mudar aqui vale só para esta parcela.
         </p>
       )}
-      <Segmentos valor={tipo} aoMudar={setTipo} opcoes={[{ valor: 'saida', rotulo: 'Gasto' }, { valor: 'entrada', rotulo: 'Entrada' }]} />
+      {!modo && !(item && item.tipo === 'transferencia') && (
+        <Segmentos valor={tipo} aoMudar={setTipo} opcoes={[{ valor: 'saida', rotulo: 'Gasto' }, { valor: 'entrada', rotulo: 'Entrada' }]} />
+      )}
       <CampoValor rotulo={parcelasFinal > 1 ? 'Valor total da compra' : 'Valor'} valor={valor} aoMudar={setValor} erro={erros.valor} />
 
       {entrada ? (
@@ -223,7 +301,7 @@ export function FormLancamento({ item, cad, dataInicial, inicial, aoFechar }: {
               <span className="text-sm font-bold text-texto-2">É certo que cai?</span>
               <Segmentos valor={chance} aoMudar={setChance} opcoes={CHANCES} />
               <p className="text-xs text-texto-2">
-                {chance === 'garantida' ? 'Entra no saldo previsto da conta.' : 'Aparece na grade, mas só entra no saldo quando você marcar que caiu.'}
+                {chance === 'possivel' ? 'Aparece na grade, mas fica fora do saldo previsto até você marcar que caiu.' : 'Entra no saldo previsto da conta no dia.'}
               </p>
             </div>
           )}
@@ -234,7 +312,9 @@ export function FormLancamento({ item, cad, dataInicial, inicial, aoFechar }: {
           <CampoTexto rotulo="O que foi" valor={descricao} aoMudar={setDescricao} erro={erros.descricao} placeholder="ex.: Almoço" />
           <CampoData valor={data} aoMudar={setData} erro={erros.data} />
           {campoCategoria}
-          <CampoEscolha rotulo="Pagou com" valor={ondeEscolhido} aoMudar={setOnde} erro={erros.contaId} opcoes={opcoesOnde} />
+          {opcoesOnde.length > 1 && (
+            <CampoEscolha rotulo={modo === 'cartao' ? 'Cartão' : 'Pagou com'} valor={ondeEscolhido} aoMudar={setOnde} erro={erros.contaId} opcoes={opcoesOnde} />
+          )}
           {cartao && novo && (
             <CampoEscolha rotulo="Parcelas" valor={String(parcelas)} aoMudar={(v) => setParcelas(Number(v))}
               opcoes={Array.from({ length: 24 }, (_, k) => ({ valor: String(k + 1), rotulo: k === 0 ? 'À vista' : `${k + 1}x` }))} />
@@ -272,7 +352,7 @@ export function FormLancamento({ item, cad, dataInicial, inicial, aoFechar }: {
             <div className="flex flex-col gap-1.5">
               <span className="text-sm font-bold text-texto-2">As próximas vezes são</span>
               <Segmentos valor={proximas} aoMudar={setCertezaProximas} opcoes={CHANCES.map((c) => ({ ...c, rotulo: c.valor === 'garantida' ? 'Certas' : c.valor === 'provavel' ? 'Prováveis' : 'Talvez' }))} />
-              <p className="text-xs text-texto-2">Comissão costuma ser provável: aparece na grade, mas não infla o saldo previsto.</p>
+              <p className="text-xs text-texto-2">Certas e prováveis entram no saldo previsto; “talvez” fica de fora. Quando cair de verdade, toque em “Caiu”.</p>
             </div>
           )}
           {erros.vezes && <p className="text-sm font-semibold text-saida">{erros.vezes}</p>}
@@ -288,10 +368,8 @@ export function FormLancamento({ item, cad, dataInicial, inicial, aoFechar }: {
         <button type="button" onClick={() => setMais(true)} className="self-start text-sm font-bold text-destaque">+ Descrição e categoria</button>
       ))}
 
-      <Acoes aoSalvar={salvar} aoCancelar={aoFechar}
-        aoExcluir={item ? async () => { await repositorio.lancamentos.excluir(item.id); aoFechar(); } : undefined}
-        rotuloExcluir={parcela ? 'Excluir só esta parcela' : undefined}
-        extra={parcela ? { rotulo: `Excluir as ${parcela.total} parcelas`, acao: async () => { await excluirParcelas(parcela.grupoId); aoFechar(); } } : undefined} />
+      <Acoes aoSalvar={salvar} aoCancelar={aoFechar} />
+      {item && <ExcluirLancamento l={item} aoExcluido={aoFechar} />}
     </div>
   );
 }
@@ -299,8 +377,10 @@ export function FormLancamento({ item, cad, dataInicial, inicial, aoFechar }: {
 /** Linha da lista. Fixo previsto ganha botão de "pagar" com um toque. */
 export function LinhaLancamento({ l, cad, aoTocar }: { l: Lancamento; cad: Cadastros; aoTocar: () => void }) {
   const pagamento = (l.tipo === 'transferencia' && l.cartaoId) || l.saldoAnterior;
-  const cat = cad.categoria(l.categoriaId) ?? (pagamento ? { icone: '💳', cor: '#6d4ad8', nome: 'Pagamento de fatura' } : undefined);
-  const onde = pagamento ? `saiu de ${cad.conta(l.contaId)?.nome ?? 'conta'}` : l.cartaoId ? `Cartão ${cad.cartao(l.cartaoId)?.nome ?? ''}` : cad.conta(l.contaId)?.nome;
+  const economia = l.tipo === 'transferencia' && l.destino;
+  const cat = cad.categoria(l.categoriaId)
+    ?? (economia ? { icone: '🐷', cor: '#13955f', nome: 'Economia' } : pagamento ? { icone: '💳', cor: '#6d4ad8', nome: l.saldoAnterior ? 'Fatura anterior' : 'Pagamento de fatura' } : undefined);
+  const onde = l.saldoAnterior ? `Cartão ${cad.cartao(l.cartaoId)?.nome ?? ''}` : pagamento ? `saiu de ${cad.conta(l.contaId)?.nome ?? 'conta'}` : l.cartaoId ? `Cartão ${cad.cartao(l.cartaoId)?.nome ?? ''}` : cad.conta(l.contaId)?.nome;
   const entrada = l.tipo === 'entrada';
   const previsto = l.status === 'previsto';
   const rec = cad.recorrencia(l.recorrenciaId);

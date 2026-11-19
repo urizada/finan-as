@@ -163,7 +163,7 @@ export function LancamentoRapido({ cad, aoDetalhes, autoFocus }: {
             </p>
           )}
           {r.tipo === 'entrada' && r.frequencia && r.certezaProximas && r.certezaProximas !== 'garantida' && (
-            <p className="-mt-1 text-sm text-texto-2">As próximas vezes entram como {ROTULO_CERTEZA[r.certezaProximas].toLowerCase()}s: aparecem na grade, mas não no saldo.</p>
+            <p className="-mt-1 text-sm text-texto-2">As próximas vezes entram como {ROTULO_CERTEZA[r.certezaProximas].toLowerCase()}s{r.certezaProximas === 'provavel' ? ' (contam no saldo previsto)' : ' (ficam fora do saldo)'}.</p>
           )}
           {pedirCategoria && aberto !== 'categoria' && (
             <p className="-mt-1 text-sm text-texto-2">Não reconheci a categoria. Toque nela para escolher; o app aprende para a próxima.</p>

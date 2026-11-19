@@ -27,7 +27,9 @@ export function Lancamentos() {
   });
   const grupos = agruparPorDia(filtrados);
   const entrou = filtrados.filter((l) => l.tipo === 'entrada').reduce((s, l) => s + l.valor, 0);
-  const saiu = filtrados.filter((l) => l.tipo === 'saida').reduce((s, l) => s + l.valor, 0);
+  const saiu = filtrados.filter((l) => l.tipo === 'saida' && !l.cartaoId).reduce((s, l) => s + l.valor, 0);
+  const noCartao = filtrados.filter((l) => l.tipo === 'saida' && l.cartaoId).reduce((s, l) => s + l.valor, 0);
+  const guardado = filtrados.filter((l) => l.tipo === 'transferencia' && l.destino).reduce((s, l) => s + l.valor, 0);
   const cats = (cad?.categorias ?? []).filter((c) => tipo === 'todos' || c.tipo === tipo).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
 
   return (
@@ -45,15 +47,16 @@ export function Lancamentos() {
           )}
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <div className="rounded-2xl border border-borda bg-superficie px-3 py-2">
-            <p className="text-xs font-bold text-texto-2">Entradas</p>
-            <p className="text-lg font-extrabold tabular-nums text-entrada">{formatarReais(entrou)}</p>
-          </div>
-          <div className="rounded-2xl border border-borda bg-superficie px-3 py-2">
-            <p className="text-xs font-bold text-texto-2">Saídas</p>
-            <p className="text-lg font-extrabold tabular-nums">{formatarReais(saiu)}</p>
-          </div>
+          {[
+            ['Entradas', entrou, 'text-entrada'], ['Gastos na conta', saiu, ''], ['Compras no cartão', noCartao, 'text-cartao'], ['Guardado', guardado, 'text-destaque'],
+          ].map(([r, v, c]) => (
+            <div key={r as string} className="rounded-2xl border border-borda bg-superficie px-3 py-2">
+              <p className="text-xs font-bold text-texto-2">{r}</p>
+              <p className={`text-lg font-extrabold tabular-nums ${c}`}>{formatarReais(v as number)}</p>
+            </div>
+          ))}
         </div>
+        <p className="-mt-1 px-1 text-xs text-texto-2">Compras no cartão contam no dia da compra aqui; na tela Saldos, saem da conta no vencimento da fatura.</p>
 
         {lancs && cad && (grupos.length === 0 ? (
           <p className="rounded-2xl border border-dashed border-borda px-4 py-6 text-center text-sm text-texto-2">

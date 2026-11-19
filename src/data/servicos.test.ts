@@ -39,3 +39,53 @@ describe('grade do mês (serviço)', () => {
     expect(g2.dias[g2.dias.length - 1].saldo).toBe(350000);
   });
 });
+
+import { criarLancamento, excluirLancamento, garantirFixosDoMes } from './servicos';
+
+describe('excluir com escopo', () => {
+  async function repeticao() {
+    const hoje = hojeISO();
+    const conta = await repositorio.contas.criar({ nome: 'C', tipo: 'corrente', saldoInicial: 0, dataSaldoInicial: hoje });
+    await criarLancamento({ tipo: 'saida', valor: 1000, data: hoje, descricao: 'Academia', contaId: conta.id, certeza: 'garantida', status: 'realizado' },
+      { repeticao: { frequencia: 'semanal', vezes: null } });
+    const m = mesDe(hoje);
+    for (const x of [m, somarMeses(m, 1)]) await garantirFixosDoMes(x);
+    return (await repositorio.lancamentos.listar()).sort((a, b) => (a.data < b.data ? -1 : 1));
+  }
+  it('só esta vez: não volta ao abrir o mês de novo', async () => {
+    const ls = await repeticao();
+    const alvo = ls[1];
+    await excluirLancamento(alvo, 'este');
+    await garantirFixosDoMes(mesDe(alvo.data));
+    const depois = await repositorio.lancamentos.listar();
+    expect(depois.find((l) => l.data === alvo.data)).toBeUndefined();
+    expect(depois).toHaveLength(ls.length - 1);
+  });
+  it('esta e as próximas: corta a repetição', async () => {
+    const ls = await repeticao();
+    await excluirLancamento(ls[2], 'proximos');
+    await garantirFixosDoMes(somarMeses(mesDe(hojeISO()), 2));
+    const depois = await repositorio.lancamentos.listar();
+    expect(depois.map((l) => l.data).sort()).toEqual([ls[0].data, ls[1].data]);
+  });
+  it('todas: some a repetição inteira', async () => {
+    const ls = await repeticao();
+    await excluirLancamento(ls[0], 'todos');
+    expect(await repositorio.lancamentos.listar()).toHaveLength(0);
+    expect(await repositorio.recorrencias.listar()).toHaveLength(0);
+  });
+  it('parcelas: só esta, esta e as próximas, todas', async () => {
+    const hoje = hojeISO();
+    const conta = await repositorio.contas.criar({ nome: 'C', tipo: 'corrente', saldoInicial: 0, dataSaldoInicial: hoje });
+    const k = await repositorio.cartoes.criar({ nome: 'K', limite: 100000, diaFechamento: 3, diaVencimento: 10, contaPagamentoId: conta.id });
+    await criarLancamento({ tipo: 'saida', valor: 6000, data: hoje, descricao: 'TV', cartaoId: k.id, certeza: 'garantida', status: 'realizado' }, { parcelas: 6 });
+    const ps = () => repositorio.lancamentos.listar().then((x) => x.map((l) => l.parcela!.numero).sort((a, b) => a - b));
+    const pega = async (n: number) => (await repositorio.lancamentos.listar()).find((l) => l.parcela!.numero === n)!;
+    await excluirLancamento(await pega(2), 'este');
+    expect(await ps()).toEqual([1, 3, 4, 5, 6]);
+    await excluirLancamento(await pega(5), 'proximos');
+    expect(await ps()).toEqual([1, 3, 4]);
+    await excluirLancamento(await pega(1), 'todos');
+    expect(await ps()).toEqual([]);
+  });
+});

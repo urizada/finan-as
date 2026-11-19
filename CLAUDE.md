@@ -92,6 +92,7 @@ Lancamento {
   recorrenciaId?;
   recorrenciaData?: string;          // data prevista da ocorrência (mesmo se o usuário mudar a data)
   parcela?: { numero: number; total: number; grupoId: string };
+  saldoAnterior?: boolean;           // fatura que já estava aberta antes de usar o app
   destino?: { tipo: 'meta' | 'investimento'; id };  // para transferências/aportes
 }
 
@@ -101,6 +102,7 @@ Recorrencia {                        // fixos, assinaturas, salário, comissão 
   diaDoMes: number;                  // mensal
   dataInicio?: string;               // semanal/quinzenal: 1ª ocorrência (e conta "3 de 10")
   ativa: boolean; fim?: string;      // fim = data da última ocorrência
+  excecoes?: string[];               // datas excluídas "só esta vez"
 }
 
 Cartao {
@@ -260,13 +262,17 @@ Cada fase termina com o app rodando e os testes passando.
 - **Contas fixas na data:** quando chega o dia de uma recorrência de saída, o valor já é descontado do saldo projetado da conta corrente, mesmo antes de ser marcado como pago. Um toque marca o lançamento como `realizado` (o mesmo lançamento muda de status, não cria outro).
 - **Tema claro é o padrão**; escuro opcional, com troca nas Configurações.
 - **Barra inferior:** Hoje · Saldos · (+) · Totais · Mais (substitui Home · Lançamentos · Previsão · Mais).
-- **Saldo projetado (tela Saldos):** parte do saldo de cada conta em `dataSaldoInicial` e soma, dia a dia, todos os lançamentos da conta (pagos ou previstos) **e as faturas dos cartões no dia do vencimento** (o que ainda não foi pago sai da `contaPagamentoId`). Entradas só entram se forem `garantida`; prováveis e possíveis aparecem na grade e num valor à parte ("+R$ X se as prováveis caírem"). Para abrir um mês futuro, o app gera antes os fixos de todos os meses do meio.
+- **Saldo projetado (tela Saldos):** parte do saldo de cada conta em `dataSaldoInicial` e soma, dia a dia, todos os lançamentos da conta (pagos ou previstos) **e as faturas dos cartões no dia do vencimento** (o que ainda não foi pago sai da `contaPagamentoId`). Entradas **certas e prováveis** entram (é a previsão da conta, como o cenário base da 5.8); as "talvez" (`possivel`) aparecem na grade e num valor à parte. O "livre para gastar hoje" (5.1) continua usando só o garantido. No topo da grade, a conta do mês: início + entradas − saídas (com faturas e economias) = fim. Para abrir um mês futuro, o app gera antes os fixos de todos os meses do meio.
 - **Cartão:** a compra (à vista ou parcelada) cai sozinha na fatura certa pelo dia de fechamento; cada parcela vai para a fatura do seu mês. A fatura não é um lançamento guardado: é a soma das compras daquela `faturaRef` menos os pagamentos. "Marcar como paga" cria uma `transferencia` da conta de pagamento (com `cartaoId` e `faturaRef`). A fatura que já estava aberta antes do app é informada no cadastro do cartão e vira um lançamento com `saldoAnterior: true` (não é gasto do mês).
 - **Cores do saldo:** vermelho = negativo; amarelo = o saldo do dia não cobre o que ainda vai sair da conta até o fim do mês; verde = cobre.
 - **Fixos:** os previstos de cada mês são criados quando o mês é aberto. No primeiro mês, fixos com dia anterior ao início do uso entram como já pagos. Editar um fixo refaz os previstos ainda não pagos deste mês em diante; excluir apaga esses previstos e mantém o histórico pago.
 - **Lançamento futuro ou entrada incerta** é salvo como `previsto` por padrão; o usuário pode marcar "já foi pago" / "já caiu".
 - **Repetições** (pedido do usuário: comissão que cai toda semana): qualquer lançamento pode repetir semanal, quinzenal ou mensal, sem fim ou por N vezes. Por baixo é uma `Recorrencia` com `fim`. Aparecem em Configurações › Fixos e repetições. Numa entrada repetida, a primeira vez tem a certeza escolhida e **as próximas usam a certeza de costume da fonte** (comissão = provável), para não inflar o futuro.
 - **Entrada:** o formulário pergunta "De onde veio" (fonte), "Já caiu na conta?" e, se ainda vai cair, "É certo que cai?" (Certo / Provável / Talvez). No lançamento rápido, entrada sem verbo com data de hoje ou passada conta como já caiu.
+- **Botão +:** abre a escolha do tipo — **Entrada, Saída (na conta), Cartão (compra no crédito), Fixo, Economia** — e, embaixo, o campo de lançamento rápido.
+- **Economia:** é uma `transferencia` da conta para uma meta (`destino: { tipo: 'meta' }`); a "Reserva de emergência" é criada sozinha. Sai do saldo da conta e pode repetir.
+- **Excluir:** botão sempre visível na edição. Parcelado: só esta / esta e as próximas / todas. Repetição: só esta vez (a data vira `excecoes` da recorrência e não volta) / esta e as próximas (a recorrência ganha `fim`) / todas. Pagamento de fatura e economia não viram gasto ao editar: só dá para ver e excluir.
+- **Tela Cartões (Fase 4 adiantada):** por cartão, fatura atual (aberta/fechada/paga) com marcar como paga, compras de cada fatura (tocar para corrigir/excluir), próximas faturas, limite usado (o que ainda não foi pago, inclusive parcelas futuras), disponível e melhor dia de compra.
 - **Referência visual:** o usuário enviou prints de um app de finanças que gosta (grade de saldos dia a dia, totais do mês, economizado). Serve de inspiração, não de cópia: a ideia é ser mais visual e mais simples.
 
 ## 9. Fora da v1 (já previsto na arquitetura)

@@ -10,7 +10,7 @@ export interface SaldoDia {
   dia: number;
   /** Todas as entradas do dia (qualquer certeza). */
   entradas: Centavos;
-  /** Parte das entradas que é provável/possível (não conta no saldo). */
+  /** Parte das entradas marcada como "talvez" (não conta no saldo). */
   entradasIncertas: Centavos;
   /** Tudo o que sai da conta no dia: gastos na conta, fixos e faturas que vencem. */
   saidas: Centavos;
@@ -24,7 +24,7 @@ export interface SaldoDia {
   fixoPendente: boolean;
   /** Saldo somado das contas no fim do dia; null antes de você começar a usar o app. */
   saldo: Centavos | null;
-  /** Saldo se as entradas prováveis e possíveis também caírem. */
+  /** Saldo se as entradas "talvez" também caírem. */
   saldoComIncertas: Centavos | null;
   estado: EstadoSaldo | null;
 }
@@ -32,12 +32,13 @@ export interface SaldoDia {
 /**
  * Quanto o lançamento muda o saldo das contas.
  * - Compra no cartão: nada agora; sai da conta no vencimento da fatura.
- * - Entrada só conta se for garantida (o dia a dia usa apenas o que é certo).
+ * - Entrada certa ou provável conta (é a previsão); "talvez" (possível) fica de fora.
+ *   O "livre para gastar hoje" (5.1) usa só o garantido; este saldo é a projeção da conta.
  * - Transferência (pagamento de fatura, aporte): sai da conta.
  */
 export function efeitoNaConta(l: Lancamento): Centavos {
   if (!l.contaId) return 0;
-  if (l.tipo === 'entrada') return l.certeza === 'garantida' ? l.valor : 0;
+  if (l.tipo === 'entrada') return l.certeza === 'possivel' ? 0 : l.valor;
   if (l.tipo === 'saida') return l.cartaoId ? 0 : -l.valor;
   return -l.valor;
 }
@@ -57,7 +58,21 @@ interface Movimento { data: DataISO; efeito: Centavos; incerto: Centavos }
  * Cada conta começa no saldoInicial e soma os movimentos a partir de dataSaldoInicial (inclusive).
  * Faturas de cartão saem da conta de pagamento no vencimento (o que ainda não foi pago).
  */
-export function saldosDoMes(mes: MesRef, contas: Conta[], lancamentos: Lancamento[], cartoes: Cartao[] = []): { dias: SaldoDia[]; faturas: Fatura[] } {
+export interface ResumoMes {
+  /** Saldo das contas na virada para o mês (ou no dia em que começou a usar o app). */
+  inicio: Centavos;
+  /** Entradas que entraram no saldo (certas e prováveis). */
+  entradas: Centavos;
+  /** Tudo o que saiu das contas: gastos, fixos, faturas e economias. */
+  saidas: Centavos;
+  /** Parte das saídas que é pagamento de fatura. */
+  faturas: Centavos;
+  fim: Centavos;
+  /** Entradas "talvez" do mês (fora do saldo). */
+  talvez: Centavos;
+}
+
+export function saldosDoMes(mes: MesRef, contas: Conta[], lancamentos: Lancamento[], cartoes: Cartao[] = []): { dias: SaldoDia[]; faturas: Fatura[]; resumo: ResumoMes | null } {
   const n = diasNoMes(mes);
   const inicioDe = new Map(contas.map((c) => [c.id, c.dataSaldoInicial]));
   const valeNaConta = (contaId: string | undefined, data: DataISO) => {
@@ -72,7 +87,7 @@ export function saldosDoMes(mes: MesRef, contas: Conta[], lancamentos: Lancament
   const movimentos: Movimento[] = [];
   for (const l of lancamentos) {
     if (!valeNaConta(l.contaId, l.data)) continue;
-    movimentos.push({ data: l.data, efeito: efeitoNaConta(l), incerto: l.tipo === 'entrada' && l.certeza !== 'garantida' ? l.valor : 0 });
+    movimentos.push({ data: l.data, efeito: efeitoNaConta(l), incerto: l.tipo === 'entrada' && l.certeza === 'possivel' ? l.valor : 0 });
   }
   for (const f of faturas) {
     if (f.restante > 0 && valeNaConta(f.contaId, f.vencimento)) movimentos.push({ data: f.vencimento, efeito: -f.restante, incerto: 0 });
@@ -94,17 +109,23 @@ export function saldosDoMes(mes: MesRef, contas: Conta[], lancamentos: Lancament
   for (const f of faturas) if (f.restante > 0 && valeNaConta(f.contaId, f.vencimento)) faturasDoDia.set(f.vencimento, (faturasDoDia.get(f.vencimento) ?? 0) + f.restante);
 
   const datas = Array.from({ length: n }, (_, i) => `${mes}-${String(i + 1).padStart(2, '0')}`);
+  let resumo: ResumoMes | null = null;
+  const abrir = () => { resumo ??= { inicio: saldo, entradas: 0, saidas: 0, faturas: 0, fim: 0, talvez: 0 }; };
   let aSairDepois = datas.reduce((s, d) => s + saidaDoDia(d), 0);
   const dias: SaldoDia[] = [];
 
   for (const [i, data] of datas.entries()) {
     for (const c of contas) if (c.dataSaldoInicial === data) saldo += c.saldoInicial;
-    for (const m of porDia.get(data) ?? []) { saldo += m.efeito; incertas += m.incerto; }
+    if (primeiroInicio !== null && data >= primeiroInicio) abrir();
+    for (const m of porDia.get(data) ?? []) {
+      saldo += m.efeito; incertas += m.incerto;
+      if (resumo) { const r: ResumoMes = resumo; if (m.efeito > 0) r.entradas += m.efeito; else r.saidas -= m.efeito; r.talvez += m.incerto; }
+    }
     let entradas = 0, entradasIncertas = 0, saidasConta = 0, cartao = 0, fixos = 0, fixoPendente = false;
     for (const l of lancsDoDia.get(data) ?? []) {
       if (l.tipo === 'entrada') {
         entradas += l.valor;
-        if (l.certeza !== 'garantida') entradasIncertas += l.valor;
+        if (l.certeza === 'possivel') entradasIncertas += l.valor;
       } else if (l.tipo === 'saida') {
         if (l.cartaoId) cartao += l.valor;
         else saidasConta += l.valor;
@@ -114,6 +135,7 @@ export function saldosDoMes(mes: MesRef, contas: Conta[], lancamentos: Lancament
       }
     }
     const faturasHoje = faturasDoDia.get(data) ?? 0;
+    if (resumo) (resumo as ResumoMes).faturas += faturasHoje;
     aSairDepois -= saidaDoDia(data);
     const comecou = primeiroInicio !== null && data >= primeiroInicio;
     dias.push({
@@ -123,5 +145,6 @@ export function saldosDoMes(mes: MesRef, contas: Conta[], lancamentos: Lancament
       estado: comecou ? estadoDoSaldo(saldo, aSairDepois) : null,
     });
   }
-  return { dias, faturas };
+  if (resumo) (resumo as ResumoMes).fim = saldo;
+  return { dias, faturas, resumo };
 }

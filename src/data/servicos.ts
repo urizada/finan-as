@@ -1,11 +1,11 @@
 // Operações que combinam repositório + cálculos puros. Componentes usam estas funções, não o Dexie.
 import { repositorio } from './repositorio';
-import { diasNoMes, hojeISO, mesDe, somarMeses } from '../calculos/datas';
+import { diasNoMes, hojeISO, mesDe, somarDias, somarMeses } from '../calculos/datas';
 import { dataDaOcorrencia, gerarPrevistosDoMes } from '../calculos/recorrencias';
-import { faturaDaCompra, gerarParcelas, proximaFaturaAPagar, vencimentoDaFatura, type Fatura } from '../calculos/cartao';
+import { calcularFaturas, faturaDaCompra, gerarParcelas, proximaFaturaAPagar, vencimentoDaFatura, type Fatura } from '../calculos/cartao';
 import { aprenderPalavra } from '../calculos/parser';
-import { saldosDoMes, type SaldoDia } from '../calculos/saldos';
-import type { Centavos, Certeza, DataISO, Frequencia, Id, Lancamento, MesRef, Recorrencia } from '../tipos';
+import { saldosDoMes, type ResumoMes, type SaldoDia } from '../calculos/saldos';
+import type { Cartao, Centavos, Certeza, DataISO, Frequencia, Id, Lancamento, Meta, MesRef, Recorrencia } from '../tipos';
 
 /** Primeiro dia em que você informou saldo (início do uso do app). */
 export async function dataDeInicio(): Promise<DataISO> {
@@ -58,15 +58,15 @@ export async function marcarComoPago(id: Id, pago = true): Promise<void> {
  * Grade da tela Saldos para o mês. Gera antes os fixos de todos os meses desde o início do uso,
  * para o saldo de um mês futuro já descontar os meses do meio.
  */
-export async function gradeDoMes(mes: MesRef): Promise<{ dias: SaldoDia[]; lancamentos: Lancamento[]; faturas: Fatura[] }> {
+export async function gradeDoMes(mes: MesRef): Promise<{ dias: SaldoDia[]; lancamentos: Lancamento[]; faturas: Fatura[]; resumo: ResumoMes | null }> {
   const inicio = await dataDeInicio();
   for (let m = mesDe(inicio) < mes ? mesDe(inicio) : mes; m <= mes; m = somarMeses(m, 1)) await garantirFixosDoMes(m);
   const [contas, cartoes] = await Promise.all([repositorio.contas.listar(), repositorio.cartoes.listar()]);
   const fim = `${mes}-${String(diasNoMes(mes)).padStart(2, '0')}`;
   const desde = inicio < `${mes}-01` ? inicio : `${mes}-01`;
   const lancamentos = await repositorio.lancamentos.porPeriodo(desde, fim);
-  const { dias, faturas } = saldosDoMes(mes, contas, lancamentos, cartoes);
-  return { dias, faturas: faturas.filter((f) => f.vencimento.startsWith(mes)), lancamentos: lancamentos.filter((l) => l.data.startsWith(mes)) };
+  const { dias, faturas, resumo } = saldosDoMes(mes, contas, lancamentos, cartoes);
+  return { dias, resumo, faturas: faturas.filter((f) => f.vencimento.startsWith(mes)), lancamentos: lancamentos.filter((l) => l.data.startsWith(mes)) };
 }
 
 /** Marca a fatura como paga: cria a saída da conta de pagamento com o que falta. */
@@ -170,4 +170,78 @@ export async function excluirParcelas(grupoId: Id): Promise<void> {
 export async function ensinarCategoria(palavra: string, categoriaId: Id): Promise<void> {
   const mudadas = aprenderPalavra(await repositorio.categorias.listar(), palavra, categoriaId);
   for (const c of mudadas) await repositorio.categorias.salvar(c);
+}
+
+export type Escopo = 'este' | 'proximos' | 'todos';
+
+/**
+ * Exclui um lançamento. Em parcelado ou repetição, `escopo` diz se é só este, este e os próximos, ou todos.
+ * Excluir "só este" de uma repetição guarda a data como exceção, para ela não voltar.
+ */
+export async function excluirLancamento(l: Lancamento, escopo: Escopo = 'este'): Promise<void> {
+  if (l.parcela) {
+    const ps = await repositorio.lancamentos.porGrupoParcela(l.parcela.grupoId);
+    const alvo = escopo === 'todos' ? ps : escopo === 'proximos' ? ps.filter((p) => p.parcela!.numero >= l.parcela!.numero) : [l];
+    await repositorio.lancamentos.excluirVarios(alvo.map((p) => p.id));
+    return;
+  }
+  const rec = l.recorrenciaId ? await repositorio.recorrencias.obter(l.recorrenciaId) : undefined;
+  if (!rec) { await repositorio.lancamentos.excluir(l.id); return; }
+  const dataOc = l.recorrenciaData ?? l.data;
+  const todos = await repositorio.lancamentos.porRecorrencia(rec.id);
+  if (escopo === 'todos') {
+    await repositorio.lancamentos.excluirVarios(todos.map((x) => x.id));
+    await repositorio.recorrencias.excluir(rec.id);
+  } else if (escopo === 'proximos') {
+    await repositorio.lancamentos.excluirVarios(todos.filter((x) => (x.recorrenciaData ?? x.data) >= dataOc).map((x) => x.id));
+    const fim = somarDias(dataOc, -1);
+    if (rec.dataInicio && fim < rec.dataInicio) await repositorio.recorrencias.excluir(rec.id);
+    else await repositorio.recorrencias.salvar({ ...rec, fim });
+  } else {
+    await repositorio.recorrencias.salvar({ ...rec, excecoes: [...(rec.excecoes ?? []), dataOc] });
+    await repositorio.lancamentos.excluir(l.id);
+  }
+}
+
+// ---------- Economia ----------
+
+/** A reserva de emergência (cria se ainda não existir). */
+export async function garantirReserva(): Promise<Meta> {
+  const metas = await repositorio.metas.listar();
+  return metas.find((m) => m.tipo === 'reserva_emergencia')
+    ?? repositorio.metas.criar({ nome: 'Reserva de emergência', tipo: 'reserva_emergencia', valorAlvo: 0, saldoAtual: 0 });
+}
+
+// ---------- Cartões ----------
+
+export interface ResumoCartao {
+  cartao: Cartao;
+  /** Todas as faturas com compras, em ordem de vencimento. */
+  faturas: Fatura[];
+  /** A próxima a pagar (pode estar com total 0). */
+  proxima: Fatura;
+  /** O que ainda não foi pago (inclui parcelas futuras). */
+  limiteUsado: Centavos;
+  melhorDia: number;
+  lancamentos: Lancamento[];
+}
+
+export async function resumoDosCartoes(): Promise<ResumoCartao[]> {
+  await garantirFixosDoMes(mesDe(hojeISO()));
+  await garantirFixosDoMes(somarMeses(mesDe(hojeISO()), 1));
+  const [cartoes, todos] = await Promise.all([repositorio.cartoes.listar(), repositorio.lancamentos.listar()]);
+  const hoje = hojeISO();
+  return cartoes.map((cartao) => {
+    const lancamentos = todos.filter((l) => l.cartaoId === cartao.id);
+    const faturas = calcularFaturas(lancamentos, [cartao]);
+    const ref = proximaFaturaAPagar(hoje, cartao);
+    const vazia: Fatura = { cartaoId: cartao.id, faturaRef: ref, vencimento: vencimentoDaFatura(ref, cartao), contaId: cartao.contaPagamentoId, total: 0, pago: 0, restante: 0 };
+    // a fatura "atual" é a primeira ainda não paga a partir da próxima a pagar
+    const proxima = faturas.find((f) => f.faturaRef >= ref && f.restante > 0) ?? faturas.find((f) => f.faturaRef === ref) ?? vazia;
+    return {
+      cartao, faturas, proxima, lancamentos,
+      limiteUsado: faturas.reduce((s, f) => s + f.restante, 0),
+      melhorDia: cartao.diaFechamento >= 28 ? 1 : cartao.diaFechamento + 1,
+    };
+  });
 }

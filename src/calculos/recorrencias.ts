@@ -26,7 +26,7 @@ export function datasNoMes(r: Recorrencia, mes: MesRef): DataISO[] {
     datas = [];
     for (; d <= ultimo; d = somarDias(d, passo)) datas.push(d);
   }
-  return datas.filter((d) => (!r.dataInicio || d >= r.dataInicio) && (!r.fim || d <= r.fim));
+  return datas.filter((d) => (!r.dataInicio || d >= r.dataInicio) && (!r.fim || d <= r.fim) && !r.excecoes?.includes(d));
 }
 
 /** Número da ocorrência (1, 2, 3…) contando a partir do início. Sem início no mensal: null. */
@@ -104,6 +104,7 @@ export function gerarPrevistosDoMes(
       if (m.contaId) l.contaId = m.contaId;
       if (m.cartaoId) l.cartaoId = m.cartaoId;
       if (m.fonteRendaId) l.fonteRendaId = m.fonteRendaId;
+      if (m.destino) l.destino = m.destino;
       novos.push(l);
     }
   }
