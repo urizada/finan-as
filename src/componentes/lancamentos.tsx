@@ -83,7 +83,12 @@ export function CampoVezes({ vezes, aoMudar, inicio, frequencia }: {
   return (
     <div className="flex flex-col gap-2">
       <Segmentos valor={vezes === null ? 'sempre' : 'vezes'} aoMudar={(v) => aoMudar(v === 'sempre' ? null : Number(texto) || 2)}
-        opcoes={[{ valor: 'sempre', rotulo: 'Sem fim' }, { valor: 'vezes', rotulo: 'Número de vezes' }]} />
+        opcoes={[{ valor: 'sempre', rotulo: 'Sem fim' }, { valor: 'vezes', rotulo: 'Só algumas vezes' }]} />
+      {vezes === null && (
+        <p className="text-sm text-texto-2">
+          Repete {frequencia === 'semanal' ? 'toda semana' : frequencia === 'quinzenal' ? 'a cada 15 dias' : 'todo mês'}, em todos os meses, sem data para acabar. Você pode parar quando quiser.
+        </p>
+      )}
       {vezes !== null && (
         <div className="flex items-center gap-3">
           <input inputMode="numeric" aria-label="Quantas vezes" value={texto}

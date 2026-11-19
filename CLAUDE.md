@@ -254,7 +254,7 @@ Recorrências geram os lançamentos previstos do mês automaticamente, para que 
 
 Navegação: barra inferior com **Hoje · Saldos · (+) · Totais · Mais**. O **+** central abre o lançamento rápido em 1 toque. Mais: Lançamentos, Para onde foi, Cartões, Reserva e metas, Investimentos, Configurações.
 
-**Onboarding (primeira abertura):** perfil de renda → contas e saldo atual → fontes de renda → fixos → cartões → meses de reserva desejados. Os padrões mudam conforme o perfil escolhido.
+**Onboarding (primeira abertura):** como você recebe (**Salário fixo · Comissão · Autônomo · Salário + comissão**, uma opção só) → contas e saldo atual → **salário** (se tiver: quanto cai e em que dia; vira entrada garantida todo mês) → fixos → **comissão num mês fraco** (se tiver: estimativa pessimista e como cai — toda semana, a cada 15 dias ou 1 vez no mês; vira entrada provável repetida) com o resumo "para pagar seus fixos você precisa fazer pelo menos R$ X por mês, cerca de R$ Y por semana" → cartões → meses de reserva.
 
 ## 8. Fases de construção
 
@@ -300,6 +300,9 @@ Cada fase termina com o app rodando e os testes passando.
 - **Investimentos:** saldo = última atualização manual + aportes − resgates depois dela. Total, divisão por tipo, atualizar saldo, aportar, resgatar. A Economia do botão + também guarda em investimento.
 - **Tela Hoje simplificada:** no topo, a situação **Tranquilo / Atenção / Aperto** com o motivo em uma frase (conta negativa, mês não fecha, alerta de caixa, passou do livre de hoje, categoria acima do limite) + livre para gastar hoje. Depois: lançamento rápido, Chegando, Limites (só os perto/acima) e um único cartão **Visão geral** (na conta hoje, previsto no fim do mês, falta pagar, próxima fatura, reserva em meses, próximos 12 meses).
 - **Saldos compacto:** por padrão mostra só as linhas com valor ("Só com valor"); o botão mostra todas as linhas.
+- **Repetições já lançadas para 12 meses:** ao abrir o app (e ao criar/editar uma repetição), os fixos e repetições de todos os meses desde o início do uso até 12 meses à frente já ficam gerados, para aparecerem em qualquer tela.
+- **Precisa entrar para os fixos (5.6):** para perfis com comissão, a Visão geral da tela Hoje mostra quanto precisa entrar por mês (fixos − salário) e por semana (× 12 ÷ 52). Não é meta de vendas.
+- **Livre no primeiro mês:** lançamentos com data anterior ao início do uso não entram no livre por dia (o saldo informado já os considera). "Na conta hoje" conta só o garantido.
 - **Referência visual:** o usuário enviou prints de um app de finanças que gosta (grade de saldos dia a dia, totais do mês, economizado). Serve de inspiração, não de cópia: a ideia é ser mais visual e mais simples.
 
 ## 9. Fora da v1 (já previsto na arquitetura)

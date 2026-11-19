@@ -146,3 +146,41 @@ describe('fase 6 (serviço)', () => {
     expect(p.reserva).toMatchObject({ saldo: 300000, meses: 1.5, alvo: 1200000, folego: 3 });
   });
 });
+
+import { configurarRenda } from './servicos';
+
+describe('renda configurada na primeira abertura', () => {
+  it('salário todo mês e comissão toda semana já gerados para 12 meses', async () => {
+    const hoje = hojeISO();
+    const conta = await repositorio.contas.criar({ nome: 'C', tipo: 'corrente', saldoInicial: 0, dataSaldoInicial: hoje });
+    await configurarRenda({ tipo: 'salario', porRecebimento: 250000, mensal: 250000, frequencia: 'mensal', dataInicio: hoje, contaId: conta.id });
+    await configurarRenda({ tipo: 'comissao', porRecebimento: 30000, mensal: 130000, frequencia: 'semanal', dataInicio: hoje, contaId: conta.id });
+    const todos = await repositorio.lancamentos.listar();
+    const meses = (desc: string) => new Set(todos.filter((l) => l.descricao === desc).map((l) => mesDe(l.data)));
+    expect(meses('Salário').size).toBe(13);                    // este mês + 12
+    expect(meses('Comissão').size).toBe(13);
+    const em3 = somarMeses(mesDe(hoje), 3);
+    expect(todos.filter((l) => l.descricao === 'Comissão' && l.data.startsWith(em3)).length).toBeGreaterThanOrEqual(4);
+    expect(todos.find((l) => l.descricao === 'Comissão' && l.data > hoje)?.certeza).toBe('provavel');
+    expect(todos.find((l) => l.descricao === 'Salário' && l.data > hoje)?.certeza).toBe('garantida');
+    // refazer não duplica
+    await configurarRenda({ tipo: 'salario', porRecebimento: 300000, mensal: 300000, frequencia: 'mensal', dataInicio: hoje, contaId: conta.id });
+    const salarios = (await repositorio.lancamentos.listar()).filter((l) => l.descricao === 'Salário' && l.data.startsWith(em3));
+    expect(salarios.map((l) => l.valor)).toEqual([300000]);
+  });
+});
+
+describe('livre no primeiro mês', () => {
+  it('fixo com dia antes do início do uso não desconta de novo', async () => {
+    const hoje = hojeISO();
+    const conta = await repositorio.contas.criar({ nome: 'C', tipo: 'corrente', saldoInicial: 100000, dataSaldoInicial: hoje });
+    await repositorio.salvarConfig({ contaPadraoId: conta.id, onboardingConcluido: true });
+    const dia = Number(hoje.slice(8, 10));
+    if (dia > 1) {
+      await repositorio.recorrencias.criar({ diaDoMes: dia - 1, ativa: true, modelo: { tipo: 'saida', valor: 150000, descricao: 'Aluguel', contaId: conta.id } });
+      const r = await resumoHoje();
+      expect(r.livre.fixos).toBe(0);
+      expect(r.livre.livreHoje).toBeGreaterThan(0);
+    }
+  });
+});

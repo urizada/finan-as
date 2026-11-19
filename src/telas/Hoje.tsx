@@ -6,6 +6,8 @@ import { Folha } from '../componentes/ui';
 import { guardarNaReserva, marcarComoPago, pagarFatura, patrimonio, resumoDosCartoes, resumoHoje, situacaoDeHoje, type ItemChegando, type ResumoHoje } from '../data/servicos';
 import { formatarMeses, type Situacao } from '../calculos/metas';
 import { BarraLimite } from './Limites';
+import { repositorio } from '../data/repositorio';
+import { necessarioParaFixos, temComissao } from '../calculos/renda';
 import { useCadastros, type Cadastros } from '../data/useCadastros';
 import { useConsulta } from '../data/useConsulta';
 import { formatarData, somarDias } from '../calculos/datas';
@@ -45,6 +47,7 @@ export function Hoje() {
   const sit = useConsulta(async () => (r ? situacaoDeHoje(r) : undefined), [r]);
   const p = useConsulta(() => patrimonio(), []);
   const cartoes = useConsulta(() => resumoDosCartoes(), []);
+  const config = useConsulta(() => repositorio.obterConfig(), []);
   const [detalhes, setDetalhes] = useState<InicialLancamento | null>(null);
   const [editando, setEditando] = useState<Lancamento | null>(null);
   const [explicar, setExplicar] = useState(false);
@@ -84,6 +87,14 @@ export function Hoje() {
                 <Linha href={linkPara('cartoes')} rotulo={`Fatura ${proximaFatura.cartao.nome}`} valor={proximaFatura.proxima.restante}
                   sub={`vence ${formatarData(proximaFatura.proxima.vencimento).slice(0, 5)}`} />
               )}
+              {p && cad && config && temComissao(config.perfilRenda) && (() => {
+                const salario = cad.fontes.find((f) => f.tipo === 'fixa')?.valorMedioMensal ?? 0;
+                const nec = necessarioParaFixos(p.custoFixo, salario);
+                return nec.porMes > 0 ? (
+                  <Linha href={linkPara('configuracoes')} rotulo="Precisa entrar para os fixos" valor={nec.porMes}
+                    sub={`por mês · cerca de ${formatarReais(nec.porSemana)} por semana`} />
+                ) : null;
+              })()}
               {p && (
                 <Linha href={linkPara('metas')} rotulo="Reserva" texto={p.reserva.meses !== null ? `${formatarMeses(p.reserva.meses)} de ${p.reserva.mesesAlvo} meses` : formatarReais(p.reserva.saldo)}
                   sub={p.reserva.folego !== null ? `aguenta ${formatarMeses(p.reserva.folego)} meses sem entrar nada` : undefined} />

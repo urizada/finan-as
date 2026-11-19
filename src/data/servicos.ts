@@ -44,6 +44,14 @@ export async function reaplicarRecorrencia(recorrenciaId: Id): Promise<void> {
   await repositorio.lancamentos.excluirVarios(futuros.map((l) => l.id));
   const meses = new Set([mesDe(hojeISO()), ...futuros.map((l) => mesDe(l.data))]);
   for (const m of meses) await garantirFixosDoMes(m);
+  await garantirMesesAFrente();
+}
+
+/** Gera os fixos e repetições de todos os meses desde o início do uso até 12 meses à frente. */
+export async function garantirMesesAFrente(meses = 12): Promise<void> {
+  const inicio = await dataDeInicio();
+  const ate = somarMeses(mesDe(hojeISO()), meses);
+  for (let m = mesDe(inicio) < mesDe(hojeISO()) ? mesDe(inicio) : mesDe(hojeISO()); m <= ate; m = somarMeses(m, 1)) await garantirFixosDoMes(m);
 }
 
 /** Ao excluir um fixo: apaga os previstos dele deste mês em diante (mantém o histórico pago). */
@@ -148,7 +156,7 @@ async function criarLancamentoSemAviso(dados: Omit<Lancamento, 'id'>, op: Opcoes
     };
     const salvo = await repositorio.recorrencias.criar(rec);
     await garantirFixosDoMes(mesDe(data));
-    if (mesDe(hojeISO()) !== mesDe(data)) await garantirFixosDoMes(mesDe(hojeISO()));
+    await garantirMesesAFrente();
     const primeiro = (await repositorio.lancamentos.porRecorrencia(salvo.id)).find((l) => l.recorrenciaData === data);
     if (primeiro && (primeiro.status !== dados.status || primeiro.certeza !== dados.certeza))
       await repositorio.lancamentos.atualizar(primeiro.id, { status: dados.status, certeza: dados.certeza });
@@ -320,6 +328,8 @@ export async function resumoHoje(diasAFrente = 10): Promise<ResumoHoje> {
     lancamentosAte(ate), repositorio.contas.listar(), repositorio.cartoes.listar(), repositorio.obterConfig(), repositorio.metas.listar(),
   ]);
   const doMes = lancamentos.filter((l) => l.data.startsWith(mes));
+  // O saldo informado no primeiro dia já desconta o que aconteceu antes: isso não entra de novo no livre.
+  const doMesDesdeInicio = doMes.filter((l) => l.data >= inicio);
   const { partida, sobraAnterior } = calcularPartida(mes, inicio, config.destinoSobraMes, contas, lancamentos, cartoes, hoje);
   const faturas = calcularFaturas(lancamentos, cartoes);
   const limite = somarDias(hoje, diasAFrente);
@@ -339,9 +349,9 @@ export async function resumoHoje(diasAFrente = 10): Promise<ResumoHoje> {
 
   return {
     hoje,
-    livre: livrePorDia(doMes, hoje, partida),
+    livre: livrePorDia(doMesDesdeInicio, hoje, partida),
     alerta: alertaDeCaixa(contas, lancamentos, cartoes, hoje),
-    saldoHoje: saldoDasContas(contas, lancamentos, cartoes, hoje),
+    saldoHoje: saldoDasContas(contas, lancamentos, cartoes, hoje, true), // o que está de fato na conta
     fimDoMes: saldoDasContas(contas, lancamentos, cartoes, fim).total,
     chegando,
     totais: totaisDoMes(doMes, mes, hoje, inicio),
@@ -513,4 +523,40 @@ export async function situacaoDeHoje(r: ResumoHoje): Promise<{ situacao: Situaca
     }),
     limitesAtencao,
   };
+}
+
+// ---------- Renda (primeira abertura) ----------
+
+/**
+ * Cria ou atualiza a fonte de renda e a entrada que se repete (salário ou comissão estimada).
+ * Salário: todo mês, garantido. Comissão: pela frequência escolhida, provável (estimativa pessimista).
+ */
+export async function configurarRenda(p: {
+  tipo: 'salario' | 'comissao'; porRecebimento: Centavos; mensal: Centavos; frequencia: Frequencia; dataInicio: DataISO; contaId: Id;
+}): Promise<void> {
+  const nome = p.tipo === 'salario' ? 'Salário' : 'Comissão';
+  const certeza: Certeza = p.tipo === 'salario' ? 'garantida' : 'provavel';
+  const fontes = await repositorio.fontesRenda.listar();
+  const existente = fontes.find((f) => f.nome === nome);
+  const dadosFonte = { nome, tipo: p.tipo === 'salario' ? 'fixa' as const : 'variavel' as const, valorMedioMensal: p.mensal, certezaPadrao: certeza };
+  const fonte = existente ? await repositorio.fontesRenda.salvar({ ...existente, ...dadosFonte }) : await repositorio.fontesRenda.criar(dadosFonte);
+  const categoria = (await repositorio.categorias.listar()).find((c) => c.tipo === 'entrada' && c.nome === nome);
+  const recs = await repositorio.recorrencias.listar();
+  const recExistente = recs.find((r) => r.modelo.fonteRendaId === fonte.id && r.modelo.tipo === 'entrada');
+  const rec: Omit<Recorrencia, 'id'> = {
+    modelo: {
+      tipo: 'entrada', valor: p.porRecebimento, descricao: nome, contaId: p.contaId, certeza, fonteRendaId: fonte.id,
+      ...(categoria ? { categoriaId: categoria.id } : {}),
+    },
+    frequencia: p.frequencia, diaDoMes: Number(p.dataInicio.slice(8, 10)), dataInicio: p.dataInicio, ativa: true,
+  };
+  const salvo = recExistente ? await repositorio.recorrencias.salvar({ ...recExistente, ...rec, fim: undefined }) : await repositorio.recorrencias.criar(rec);
+  await reaplicarRecorrencia(salvo.id);
+}
+
+/** Renda já configurada (para preencher a tela de novo ao refazer). */
+export async function rendaConfigurada(tipo: 'salario' | 'comissao'): Promise<Recorrencia | undefined> {
+  const nome = tipo === 'salario' ? 'Salário' : 'Comissão';
+  const fonte = (await repositorio.fontesRenda.listar()).find((f) => f.nome === nome);
+  return fonte ? (await repositorio.recorrencias.listar()).find((r) => r.modelo.fonteRendaId === fonte.id && r.modelo.tipo === 'entrada') : undefined;
 }

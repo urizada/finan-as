@@ -14,14 +14,14 @@ export interface PadraoPerfil {
 export const PERFIS: Record<PerfilRenda, PadraoPerfil> = {
   fixa: {
     rotulo: 'Salário fixo',
-    descricao: 'CLT ou servidor: o mesmo valor todo mês.',
+    descricao: 'Recebe o mesmo valor todo mês (CLT, servidor).',
     mesesReservaAlvo: 4,
     faixaReserva: [3, 6],
     fontesSugeridas: [{ nome: 'Salário', tipo: 'fixa', certezaPadrao: 'garantida' }],
   },
   variavel: {
-    rotulo: 'Comissão ou variável',
-    descricao: 'O valor muda todo mês conforme as vendas.',
+    rotulo: 'Comissão',
+    descricao: 'Ganha conforme vende. Muda todo mês.',
     mesesReservaAlvo: 9,
     faixaReserva: [6, 12],
     fontesSugeridas: [{ nome: 'Comissão', tipo: 'variavel', certezaPadrao: 'provavel' }],
@@ -41,8 +41,8 @@ export const PERFIS: Record<PerfilRenda, PadraoPerfil> = {
     fontesSugeridas: [{ nome: 'Temporada', tipo: 'sazonal', certezaPadrao: 'possivel' }],
   },
   mista: {
-    rotulo: 'Mista',
-    descricao: 'Uma parte fixa e outra variável.',
+    rotulo: 'Salário + comissão',
+    descricao: 'Tem um salário fixo e uma parte variável.',
     mesesReservaAlvo: 6,
     faixaReserva: [6, 12],
     fontesSugeridas: [
@@ -113,3 +113,6 @@ export function limitarMesesReserva(meses: number): number {
   if (!Number.isFinite(meses)) return 6;
   return Math.min(24, Math.max(1, Math.round(meses)));
 }
+
+/** Perfis mostrados na primeira abertura (sazonal fica só nas Configurações). */
+export const PERFIS_NA_ABERTURA: PerfilRenda[] = ['fixa', 'variavel', 'autonoma', 'mista'];
