@@ -200,7 +200,7 @@ export function FormFonte({ item, aoFechar }: PropsForm<FonteRenda>) {
 
 // ---------- Fixo (recorrência) ----------
 
-export function FormRecorrencia({ item, aoFechar }: PropsForm<Recorrencia>) {
+export function FormRecorrencia({ item, aoFechar, dataInicial }: PropsForm<Recorrencia> & { dataInicial?: string }) {
   const contas = useConsulta(() => repositorio.contas.listar(), []) ?? [];
   const cartoes = useConsulta(() => repositorio.cartoes.listar(), []) ?? [];
   const categorias = useConsulta(() => repositorio.categorias.listar(), []) ?? [];
@@ -210,14 +210,14 @@ export function FormRecorrencia({ item, aoFechar }: PropsForm<Recorrencia>) {
   const [tipo, setTipo] = useState<'saida' | 'entrada'>(m?.tipo === 'entrada' ? 'entrada' : 'saida');
   const [descricao, setDescricao] = useState(m?.descricao ?? '');
   const [valor, setValor] = useState(m?.valor ?? 0);
-  const [dia, setDia] = useState(String(item?.diaDoMes ?? ''));
+  const [dia, setDia] = useState(String(item?.diaDoMes ?? (dataInicial ? Number(dataInicial.slice(8, 10)) : '')));
   const [categoriaId, setCategoriaId] = useState(m?.categoriaId ?? '');
   const [onde, setOnde] = useState(m?.cartaoId ? `cartao:${m.cartaoId}` : m?.contaId ? `conta:${m.contaId}` : '');
   const [fonteId, setFonteId] = useState(m?.fonteRendaId ?? '');
   const [certeza, setCerteza] = useState<Certeza>(m?.certeza ?? 'garantida');
   const [ativa, setAtiva] = useState(item?.ativa ?? true);
   const [freq, setFreq] = useState<Frequencia>(item?.frequencia ?? 'mensal');
-  const [inicio, setInicio] = useState(item?.dataInicio ?? hojeISO());
+  const [inicio, setInicio] = useState(item?.dataInicio ?? dataInicial ?? hojeISO());
   const [vezes, setVezes] = useState<number | null>(item ? totalDeOcorrencias(item) : null);
 
   /** Mensal: a primeira vez é a próxima data do dia escolhido (ou a que já estava salva). */

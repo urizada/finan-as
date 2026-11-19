@@ -21,6 +21,12 @@
   --color-saldo-ok: #d9f5e6;
   --color-saldo-apertado: #fcefc7;
   --color-saldo-negativo: #fbdcd5;
+  /* horizonte: verde forte, verde, amarelo, rosa, vermelho */
+  --color-h-forte: #9ed98a;
+  --color-h-bom: #c9f2c7;
+  --color-h-apertado: #f8e7b4;
+  --color-h-pouco: #f3c5c7;
+  --color-h-negativo: #e57a76;
 }
 
 [data-tema='escuro'] {
@@ -39,6 +45,11 @@
   --color-saldo-ok: #173a2b;
   --color-saldo-apertado: #3b3218;
   --color-saldo-negativo: #43221c;
+  --color-h-forte: #2f6b3a;
+  --color-h-bom: #1f4a33;
+  --color-h-apertado: #5a4a1c;
+  --color-h-pouco: #5a2f33;
+  --color-h-negativo: #8a2f2b;
   color-scheme: dark;
 }
 

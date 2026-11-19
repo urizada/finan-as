@@ -1,12 +1,12 @@
 // Operações que combinam repositório + cálculos puros. Componentes usam estas funções, não o Dexie.
 import { repositorio } from './repositorio';
 import { diasNoMes, hojeISO, mesDe, somarDias, somarMeses } from '../calculos/datas';
-import { dataDaOcorrencia, gerarPrevistosDoMes } from '../calculos/recorrencias';
+import { custoFixoMensal, dataDaOcorrencia, gerarPrevistosDoMes } from '../calculos/recorrencias';
 import { calcularFaturas, faturaDaCompra, gerarParcelas, proximaFaturaAPagar, vencimentoDaFatura, type Fatura } from '../calculos/cartao';
 import { aprenderPalavra } from '../calculos/parser';
 import { alertaDeCaixa, dividirEntrada, livrePorDia, PERCENTUAIS_PADRAO, saldoDasContas, totaisDoMes, type AlertaCaixa, type Divisao, type LivrePorDia, type TotaisMes } from '../calculos/orcamento';
 import { avisarEntradaRecebida } from './eventos';
-import { saldosDoMes, type ResumoMes, type SaldoDia } from '../calculos/saldos';
+import { corDoSaldo, saldosDoMes, type CorSaldo, type ResumoMes, type SaldoDia } from '../calculos/saldos';
 import type { Cartao, Centavos, Certeza, Conta, DataISO, Frequencia, Id, Lancamento, Meta, MesRef, Recorrencia } from '../tipos';
 
 /** Primeiro dia em que você informou saldo (início do uso do app). */
@@ -387,4 +387,28 @@ export async function totaisDaTela(mes: MesRef): Promise<TotaisTela> {
   const meses = Array.from({ length: 12 }, (_, i) => `${ano}-${String(i + 1).padStart(2, '0')}`).filter((m) => m <= ultimo);
   const por = (m: MesRef) => totaisDoMes(doAno.filter((l) => l.data.startsWith(m)), m, hoje, inicio);
   return { mes, totais: por(mes), ano: meses.map((m) => ({ mes: m, totais: por(m) })) };
+}
+
+// ---------- Horizonte de saldos ----------
+
+export interface DiaHorizonte { data: DataISO; dia: number; saldo: Centavos | null; cor: CorSaldo | null }
+export interface MesHorizonte { mes: MesRef; dias: DiaHorizonte[]; fim: Centavos | null; menor: Centavos | null }
+
+/** Saldo previsto de cada dia nos próximos `qtd` meses (a partir do mês atual). */
+export async function horizonte(qtd = 12): Promise<{ meses: MesHorizonte[]; referencia: Centavos; hoje: DataISO }> {
+  const hoje = hojeISO();
+  const primeiro = mesDe(hoje);
+  const ultimo = somarMeses(primeiro, qtd - 1);
+  const [{ lancamentos }, contas, cartoes, recs] = await Promise.all([
+    lancamentosAte(ultimo), repositorio.contas.listar(), repositorio.cartoes.listar(), repositorio.recorrencias.listar(),
+  ]);
+  const referencia = custoFixoMensal(recs);
+  const meses: MesHorizonte[] = [];
+  for (let m = primeiro; m <= ultimo; m = somarMeses(m, 1)) {
+    const { dias } = saldosDoMes(m, contas, lancamentos, cartoes);
+    const ds = dias.map((d) => ({ data: d.data, dia: d.dia, saldo: d.saldo, cor: d.saldo === null || !d.estado ? null : corDoSaldo(d.saldo, d.estado, referencia) }));
+    const valores = ds.map((d) => d.saldo).filter((v): v is number => v !== null);
+    meses.push({ mes: m, dias: ds, fim: valores.length ? valores[valores.length - 1] : null, menor: valores.length ? Math.min(...valores) : null });
+  }
+  return { meses, referencia, hoje };
 }

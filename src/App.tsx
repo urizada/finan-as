@@ -11,6 +11,7 @@ import { Hoje } from './telas/Hoje';
 import { Lancamentos } from './telas/Lancamentos';
 import { Mais } from './telas/Mais';
 import { Saldos } from './telas/Saldos';
+import { Horizonte } from './telas/Horizonte';
 import { Previsao, Totais } from './telas/Totais';
 import { Investimentos, Metas, ParaOndeFoi } from './telas/Secundarias';
 import { Cartoes } from './telas/Cartoes';
@@ -20,6 +21,7 @@ import { Onboarding } from './telas/Onboarding';
 const TELAS: Record<Rota, () => React.JSX.Element> = {
   hoje: Hoje,
   saldos: Saldos,
+  horizonte: Horizonte,
   totais: Totais,
   mais: Mais,
   lancamentos: Lancamentos,

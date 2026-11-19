@@ -12,15 +12,17 @@ export interface SaldoDia {
   entradas: Centavos;
   /** Parte das entradas marcada como "talvez" (não conta no saldo). */
   entradasIncertas: Centavos;
-  /** Gastos que saem da conta e não são fixos (inclui economia avulsa). */
-  saidas: Centavos;
-  /** Fixos que saem da conta no dia (repetições, inclusive economia mensal). */
+  /** Gastos do dia a dia que saem da conta (não fixos, não cartão). */
+  diario: Centavos;
+  /** Fixos (contas que se repetem) que saem da conta no dia. */
   fixos: Centavos;
+  /** Dinheiro guardado no dia (reserva, metas), avulso ou repetido. */
+  economia: Centavos;
   /** Cartão que sai da conta no dia: faturas que vencem + pagamentos de fatura feitos no dia. */
   faturas: Centavos;
   /** Compras feitas no cartão no dia (só informativo: saem da conta na fatura). */
   cartao: Centavos;
-  /** Quanto o saldo mudou no dia = entradas que contam − saídas − fixos − faturas. */
+  /** Quanto o saldo mudou no dia = entradas que contam − dia a dia − fixos − economia − faturas. */
   liquido: Centavos;
   /** Há fixo do dia ainda não marcado como pago. */
   fixoPendente: boolean;
@@ -123,18 +125,20 @@ export function saldosDoMes(mes: MesRef, contas: Conta[], lancamentos: Lancament
       saldo += m.efeito; incertas += m.incerto;
       if (resumo) { const r: ResumoMes = resumo; if (m.efeito > 0) r.entradas += m.efeito; else r.saidas -= m.efeito; r.talvez += m.incerto; }
     }
-    let entradas = 0, entradasIncertas = 0, saidas = 0, cartao = 0, fixos = 0, pagamentos = 0, fixoPendente = false;
+    let entradas = 0, entradasIncertas = 0, diario = 0, cartao = 0, fixos = 0, economia = 0, pagamentos = 0, fixoPendente = false;
     for (const l of lancsDoDia.get(data) ?? []) {
       if (l.tipo === 'entrada') {
         entradas += l.valor;
         if (l.certeza === 'possivel') entradasIncertas += l.valor;
       } else if (l.tipo === 'saida' && l.cartaoId) {
-        cartao += l.valor;                                   // compra no cartão: só informativo
+        if (!l.saldoAnterior) cartao += l.valor;             // compra no cartão: só informativo
       } else if (l.tipo === 'transferencia' && l.cartaoId) {
         if (l.contaId) pagamentos += l.valor;                // pagamento de fatura
+      } else if (l.tipo === 'transferencia' && l.destino) {
+        if (l.contaId) economia += l.valor;                  // guardado (avulso ou repetido)
       } else if (l.contaId) {
         if (l.recorrenciaId) { fixos += l.valor; if (l.status === 'previsto') fixoPendente = true; }
-        else saidas += l.valor;                              // gasto na conta ou economia avulsa
+        else diario += l.valor;                              // gasto do dia a dia na conta
       }
     }
     const faturasHoje = (faturasDoDia.get(data) ?? 0) + pagamentos;
@@ -143,8 +147,8 @@ export function saldosDoMes(mes: MesRef, contas: Conta[], lancamentos: Lancament
     aSairDepois -= saidaDoDia(data);
     const comecou = primeiroInicio !== null && data >= primeiroInicio;
     dias.push({
-      data, dia: i + 1, entradas, entradasIncertas, saidas, fixos, faturas: faturasHoje, cartao, fixoPendente,
-      liquido: entradasQueContam - saidas - fixos - faturasHoje,
+      data, dia: i + 1, entradas, entradasIncertas, diario, fixos, economia, faturas: faturasHoje, cartao, fixoPendente,
+      liquido: entradasQueContam - diario - fixos - economia - faturasHoje,
       saldo: comecou ? saldo : null,
       saldoComIncertas: comecou ? saldo + incertas : null,
       estado: comecou ? estadoDoSaldo(saldo, aSairDepois) : null,
@@ -152,4 +156,40 @@ export function saldosDoMes(mes: MesRef, contas: Conta[], lancamentos: Lancament
   }
   if (resumo) (resumo as ResumoMes).fim = saldo;
   return { dias, faturas, resumo };
+}
+
+/** Em qual linha do dia o lançamento aparece na tela Saldos. */
+export type LinhaDia = 'entradas' | 'fixos' | 'diario' | 'economia' | 'cartao';
+
+export function linhaDoLancamento(l: Lancamento): LinhaDia {
+  if (l.tipo === 'entrada') return 'entradas';
+  if (l.tipo === 'transferencia') return l.destino ? 'economia' : 'cartao';
+  if (l.cartaoId || l.saldoAnterior) return 'cartao';
+  return l.recorrenciaId ? 'fixos' : 'diario';
+}
+
+// ---------- Cores do horizonte ----------
+
+export type CorSaldo = 'forte' | 'bom' | 'apertado' | 'pouco-negativo' | 'negativo';
+
+/**
+ * Cor de um dia no horizonte. `referencia` é o custo fixo de um mês:
+ * verde forte = sobra mais que um mês de fixos; verde claro = cobre o que falta pagar;
+ * amarelo = não cobre o que ainda sai no mês; rosa = negativo até 10% da referência; vermelho = mais negativo que isso.
+ */
+export function corDoSaldo(saldo: Centavos, estado: EstadoSaldo, referencia: Centavos): CorSaldo {
+  if (saldo < 0) return referencia > 0 && -saldo <= referencia * 0.1 ? 'pouco-negativo' : 'negativo';
+  if (estado === 'apertado') return 'apertado';
+  return referencia > 0 && saldo >= referencia ? 'forte' : 'bom';
+}
+
+/** "5,85k", "−1,62k", "725", "1,2mi": saldo curto para caber na grade de meses. */
+export function saldoCurto(c: Centavos): string {
+  const reais = c / 100;
+  const abs = Math.abs(reais);
+  const sinal = reais < 0 ? '−' : '';
+  const fmt = (v: number, casas: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: casas });
+  if (abs >= 1_000_000) return `${sinal}${fmt(abs / 1_000_000, 2)}mi`;
+  if (abs >= 1_000) return `${sinal}${fmt(abs / 1_000, abs >= 100_000 ? 0 : abs >= 10_000 ? 1 : 2)}k`;
+  return `${sinal}${Math.round(abs)}`;
 }

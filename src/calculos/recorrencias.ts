@@ -110,3 +110,15 @@ export function gerarPrevistosDoMes(
   }
   return novos;
 }
+
+/** Custo fixo de um mês: soma das saídas que se repetem (semanal ×52/12, quinzenal ×26/12). */
+export function custoFixoMensal(recorrencias: Recorrencia[]): number {
+  let total = 0;
+  for (const r of recorrencias) {
+    if (!r.ativa || r.modelo.tipo === 'entrada' || r.modelo.destino) continue;
+    const v = r.modelo.valor ?? 0;
+    const f = r.frequencia ?? 'mensal';
+    total += f === 'mensal' ? v : f === 'quinzenal' ? (v * 26) / 12 : (v * 52) / 12;
+  }
+  return Math.round(total);
+}

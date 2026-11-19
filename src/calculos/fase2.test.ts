@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { dataDaRecorrencia, gerarPrevistosDoMes } from './recorrencias';
-import { efeitoNaConta, estadoDoSaldo, saldosDoMes } from './saldos';
+import { corDoSaldo, efeitoNaConta, estadoDoSaldo, linhaDoLancamento, saldoCurto, saldosDoMes } from './saldos';
 import { calcularFaturas, proximaFaturaAPagar, vencimentoDaFatura } from './cartao';
 import { agruparPorDia, filtrarLancamentos, statusSugerido, validarLancamento } from './lancamentos';
 import type { Conta, Lancamento, Recorrencia } from '../tipos';
@@ -197,7 +197,7 @@ describe('cartão no saldo projetado', () => {
     const dez = saldosDoMes('2026-12', [conta], ls, [nubank]).dias;
     expect(dez[8].saldo).toBe(300000);
     expect(dez[9].faturas).toBe(30000);                  // 10/12: aba Cartão
-    expect(dez[9].saidas).toBe(0);                       // não aparece em Saídas
+    expect(dez[9].diario).toBe(0);                       // não aparece no dia a dia
     expect(dez[9].liquido).toBe(-30000);
     expect(dez[9].saldo).toBe(270000);
   });
@@ -254,8 +254,48 @@ describe('abas separadas da grade', () => {
       lanc('2026-11-12', 'transferencia', 2000, { destino: { tipo: 'meta', id: 'm' } }),    // economia avulsa
     ];
     const d = saldosDoMes('2026-11', [conta], ls, [k]).dias;
-    expect(d[9]).toMatchObject({ entradas: 27000, entradasIncertas: 7000, saidas: 5000, fixos: 9000, faturas: 3000, cartao: 4000, liquido: 3000 });
-    expect(d[11]).toMatchObject({ saidas: 2000, liquido: -2000 });
+    expect(d[9]).toMatchObject({ entradas: 27000, entradasIncertas: 7000, diario: 5000, fixos: 9000, faturas: 3000, cartao: 4000, liquido: 3000 });
+    expect(d[11]).toMatchObject({ economia: 2000, diario: 0, liquido: -2000 });
     for (let i = 1; i < d.length; i++) expect(d[i].saldo! - d[i - 1].saldo!).toBe(d[i].liquido);
+  });
+});
+
+describe('linhas do dia, cores e valor curto', () => {
+  it('cada lançamento na sua linha', () => {
+    expect(linhaDoLancamento(lanc('2026-11-01', 'entrada', 1))).toBe('entradas');
+    expect(linhaDoLancamento(lanc('2026-11-01', 'saida', 1))).toBe('diario');
+    expect(linhaDoLancamento(lanc('2026-11-01', 'saida', 1, { recorrenciaId: 'r' }))).toBe('fixos');
+    expect(linhaDoLancamento(lanc('2026-11-01', 'saida', 1, { cartaoId: 'k', contaId: undefined }))).toBe('cartao');
+    expect(linhaDoLancamento(lanc('2026-11-01', 'transferencia', 1, { cartaoId: 'k' }))).toBe('cartao');
+    expect(linhaDoLancamento(lanc('2026-11-01', 'transferencia', 1, { destino: { tipo: 'meta', id: 'm' }, recorrenciaId: 'r' }))).toBe('economia');
+  });
+  it('cores', () => {
+    expect(corDoSaldo(500000, 'ok', 300000)).toBe('forte');
+    expect(corDoSaldo(100000, 'ok', 300000)).toBe('bom');
+    expect(corDoSaldo(100000, 'apertado', 300000)).toBe('apertado');
+    expect(corDoSaldo(-20000, 'negativo', 300000)).toBe('pouco-negativo');
+    expect(corDoSaldo(-50000, 'negativo', 300000)).toBe('negativo');
+  });
+  it('valor curto', () => {
+    expect(saldoCurto(585000)).toBe('5,85k');
+    expect(saldoCurto(-162000)).toBe('−1,62k');
+    expect(saldoCurto(72500)).toBe('725');
+    expect(saldoCurto(-28500)).toBe('−285');
+    expect(saldoCurto(1234567)).toBe('12,3k');
+    expect(saldoCurto(150000000)).toBe('1,5mi');
+  });
+});
+
+import { custoFixoMensal } from './recorrencias';
+describe('custo fixo mensal', () => {
+  it('soma saídas que se repetem, ignora entradas, economias e pausados', () => {
+    const base = { diaDoMes: 5, ativa: true };
+    expect(custoFixoMensal([
+      { ...base, id: 'a', modelo: { tipo: 'saida', valor: 120000 } },
+      { ...base, id: 'b', frequencia: 'semanal', modelo: { tipo: 'saida', valor: 1200 } },
+      { ...base, id: 'c', modelo: { tipo: 'entrada', valor: 999999 } },
+      { ...base, id: 'd', modelo: { tipo: 'transferencia', valor: 50000, destino: { tipo: 'meta', id: 'r' } } },
+      { ...base, id: 'e', ativa: false, modelo: { tipo: 'saida', valor: 7777 } },
+    ])).toBe(120000 + 5200);
   });
 });

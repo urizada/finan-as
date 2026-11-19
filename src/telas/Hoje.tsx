@@ -82,6 +82,9 @@ export function Hoje() {
                 <span className="text-texto-2">Previsto no fim do mês</span>
                 <span className={`font-bold tabular-nums ${r.fimDoMes < 0 ? 'text-saida' : ''}`}>{formatarReais(r.fimDoMes)}</span>
               </div>
+              <a href={linkPara('horizonte')} className="flex items-center justify-between border-t border-borda px-4 py-3 text-sm font-bold text-destaque">
+                Ver os próximos 12 meses <IconeSeta className="h-4 w-4" />
+              </a>
             </div>
           </Secao>
         )}

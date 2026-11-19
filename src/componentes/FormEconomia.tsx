@@ -11,10 +11,10 @@ import { Acoes } from './formularios';
 import { CampoVezes } from './lancamentos';
 import { CampoEscolha, CampoTexto, CampoValor, Segmentos } from './ui';
 
-export function FormEconomia({ cad, aoFechar }: { cad: Cadastros; aoFechar: () => void }) {
+export function FormEconomia({ cad, aoFechar, dataInicial }: { cad: Cadastros; aoFechar: () => void; dataInicial?: string }) {
   const metas = useConsulta(async () => { await garantirReserva(); return repositorio.metas.listar(); }, []);
   const [valor, setValor] = useState(0);
-  const [data, setData] = useState(hojeISO());
+  const [data, setData] = useState(dataInicial ?? hojeISO());
   const [contaId, setContaId] = useState(cad.contaPadraoId ?? cad.contas[0]?.id ?? '');
   const [metaId, setMetaId] = useState('');
   const [novaMeta, setNovaMeta] = useState('');
