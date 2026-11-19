@@ -73,15 +73,25 @@ export interface Lancamento {
   certeza: Certeza;
   status: 'realizado' | 'previsto';
   recorrenciaId?: Id;
+  /** Data prevista da ocorrência do fixo/repetição (continua igual se o usuário mudar a data). */
+  recorrenciaData?: DataISO;
   parcela?: Parcela;
   destino?: { tipo: 'meta' | 'investimento'; id: Id };
 }
 
+export type Frequencia = 'mensal' | 'quinzenal' | 'semanal';
+
 export interface Recorrencia {
   id: Id;
   modelo: Partial<Omit<Lancamento, 'id'>>;
+  /** Padrão: mensal. */
+  frequencia?: Frequencia;
+  /** Usado na frequência mensal. */
   diaDoMes: number;
+  /** Primeira ocorrência. Obrigatório para semanal/quinzenal. */
+  dataInicio?: DataISO;
   ativa: boolean;
+  /** Data da última ocorrência. */
   fim?: DataISO;
 }
 

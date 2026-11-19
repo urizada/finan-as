@@ -48,3 +48,22 @@ export function nomeDoMes(mes: MesRef): string {
   const [a, m] = mes.split('-').map(Number);
   return `${NOMES_MESES[m - 1]} de ${a}`;
 }
+
+/** Soma dias a uma data ISO (sem problema de fuso/horário de verão). */
+export function somarDias(data: DataISO, n: number): DataISO {
+  const [a, m, d] = data.split('-').map(Number);
+  return paraISO(new Date(a, m - 1, d + n, 12));
+}
+
+/** Dias entre duas datas (b − a). */
+export function diasEntre(a: DataISO, b: DataISO): number {
+  const t = (x: DataISO) => { const [y, m, d] = x.split('-').map(Number); return Date.UTC(y, m - 1, d); };
+  return Math.round((t(b) - t(a)) / 864e5);
+}
+
+/** Mesma data N meses depois; dia 31 vira o último dia do mês quando preciso. */
+export function somarMesesNaData(data: DataISO, n: number): DataISO {
+  const mes = somarMeses(mesDe(data), n);
+  const dia = Math.min(Number(data.slice(8, 10)), diasNoMes(mes));
+  return `${mes}-${String(dia).padStart(2, '0')}`;
+}

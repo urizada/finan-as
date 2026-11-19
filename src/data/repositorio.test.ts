@@ -63,3 +63,10 @@ describe('serviços de fixos', () => {
     expect(await repo.lancamentos.listar()).toHaveLength(1);
   });
 });
+
+describe('cartão parcelado no repositório', () => {
+  it('busca parcelas pelo grupo, em ordem', async () => {
+    await repo.lancamentos.criarVarios([3, 1, 2].map((numero) => ({ ...base(`2026-1${numero}-01`, 100), cartaoId: 'k', parcela: { numero, total: 3, grupoId: 'g' } })));
+    expect((await repo.lancamentos.porGrupoParcela('g')).map((l) => l.parcela?.numero)).toEqual([1, 2, 3]);
+  });
+});

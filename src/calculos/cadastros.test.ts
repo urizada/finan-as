@@ -75,6 +75,8 @@ describe('validações', () => {
     expect(valido(validarRecorrencia(ok))).toBe(true);
     expect(validarRecorrencia({ ...ok, diaDoMes: 0 }).diaDoMes).toBeTruthy();
     expect(validarRecorrencia({ ...ok, modelo: { ...ok.modelo, contaId: undefined } }).contaId).toBeTruthy();
+    expect(validarRecorrencia({ ...ok, frequencia: 'semanal', diaDoMes: 0 }).dataInicio).toBeTruthy();
+    expect(valido(validarRecorrencia({ ...ok, frequencia: 'semanal', diaDoMes: 0, dataInicio: '2026-11-06' }))).toBe(true);
   });
   it('categoria não repete nome', () => {
     const existentes = [{ id: '1', nome: 'Mercado', tipo: 'saida' }] as Categoria[];

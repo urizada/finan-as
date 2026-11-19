@@ -133,3 +133,34 @@ describe('lançamentos', () => {
     expect([g[0].entradas, g[0].saidas]).toEqual([50, 20]);
   });
 });
+
+import { datasNoMes, dataDaOcorrencia, numeroDaOcorrencia, rotuloRepeticao, totalDeOcorrencias } from './recorrencias';
+
+describe('repetições semanais e quinzenais', () => {
+  const semanal: Recorrencia = { id: 'com', frequencia: 'semanal', dataInicio: '2026-11-06', diaDoMes: 6, ativa: true,
+    modelo: { tipo: 'entrada', valor: 50000, descricao: 'Comissão', contaId: 'c1', certeza: 'garantida' } };
+  it('datas no mês', () => {
+    expect(datasNoMes(semanal, '2026-11')).toEqual(['2026-11-06', '2026-11-13', '2026-11-20', '2026-11-27']);
+    expect(datasNoMes(semanal, '2026-12')).toEqual(['2026-12-04', '2026-12-11', '2026-12-18', '2026-12-25']);
+    expect(datasNoMes(semanal, '2026-10')).toEqual([]);
+    expect(datasNoMes({ ...semanal, frequencia: 'quinzenal' }, '2026-12')).toEqual(['2026-12-04', '2026-12-18']);
+    expect(datasNoMes({ ...semanal, fim: '2026-11-20' }, '2026-11')).toEqual(['2026-11-06', '2026-11-13', '2026-11-20']);
+  });
+  it('gera uma por semana sem repetir as que já existem', () => {
+    const novos = gerarPrevistosDoMes([semanal], '2026-11', [{ recorrenciaId: 'com', data: '2026-11-14', recorrenciaData: '2026-11-13' }], '2026-11-10');
+    expect(novos.map((l) => [l.data, l.status])).toEqual([['2026-11-06', 'realizado'], ['2026-11-20', 'previsto'], ['2026-11-27', 'previsto']]);
+    expect(novos[0].recorrenciaData).toBe('2026-11-06');
+  });
+  it('conta "3 de 10" e rótulos', () => {
+    const dez = { ...semanal, fim: dataDaOcorrencia('2026-11-06', 'semanal', 10) };
+    expect(dez.fim).toBe('2027-01-08');
+    expect(numeroDaOcorrencia(dez, '2026-11-20')).toBe(3);
+    expect(totalDeOcorrencias(dez)).toBe(10);
+    expect(rotuloRepeticao(dez, '2026-11-20')).toBe('3 de 10');
+    expect(rotuloRepeticao(semanal, '2026-11-20')).toBe('toda semana');
+    expect(rotuloRepeticao({ ...semanal, frequencia: 'mensal', dataInicio: undefined }, '2026-11-06')).toBe('fixo');
+    const mensal6 = { ...semanal, frequencia: 'mensal' as const, fim: dataDaOcorrencia('2026-11-06', 'mensal', 6) };
+    expect(mensal6.fim).toBe('2027-04-06');
+    expect(rotuloRepeticao(mensal6, '2027-01-06')).toBe('3 de 6');
+  });
+});

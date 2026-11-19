@@ -90,13 +90,17 @@ Lancamento {
   certeza: Certeza;                  // entradas; saídas são sempre 'garantida'
   status: 'realizado' | 'previsto';
   recorrenciaId?;
+  recorrenciaData?: string;          // data prevista da ocorrência (mesmo se o usuário mudar a data)
   parcela?: { numero: number; total: number; grupoId: string };
   destino?: { tipo: 'meta' | 'investimento'; id };  // para transferências/aportes
 }
 
-Recorrencia {                        // fixos, assinaturas, salário
+Recorrencia {                        // fixos, assinaturas, salário, comissão semanal
   id; modelo: Partial<Lancamento>;
-  diaDoMes: number; ativa: boolean; fim?: string;
+  frequencia?: 'mensal' | 'quinzenal' | 'semanal';   // padrão: mensal
+  diaDoMes: number;                  // mensal
+  dataInicio?: string;               // semanal/quinzenal: 1ª ocorrência (e conta "3 de 10")
+  ativa: boolean; fim?: string;      // fim = data da última ocorrência
 }
 
 Cartao {
@@ -242,9 +246,9 @@ Cada fase termina com o app rodando e os testes passando.
 - **Fase 0 — Base:** projeto Vite + TS + Tailwind + PWA, camada `repositorio`, schema Dexie, navegação e tema.
 - **Fase 1 — Cadastros:** onboarding + Configurações (contas, categorias com palavras-chave padrão, fontes de renda, cartões, recorrências).
 - **Fase 2 — Lançamentos e Saldos:** formulário manual, lista, editar/excluir, geração automática das recorrências do mês, marcar fixo como pago, **grade de Saldos** com saldo projetado por dia.
-- **Fase 3 — Lançamento rápido:** parser da seção 6 + pré-visualização + aprendizado de palavras-chave. Testes com todos os exemplos da tabela.
-- **Fase 4 — Cartões:** cálculo de fatura, parcelamento, tela de cartões.
-- **Fase 5 — Hoje, Totais e Livre por dia:** cálculos 5.1, 5.2 e 5.7 + tela Hoje completa + Totais do mês e economizado.
+- **Fase 3 — Lançamento rápido e repetições:** parser da seção 6 + pré-visualização + aprendizado de palavras-chave. Testes com todos os exemplos da tabela. Opção **Repetir** no lançamento (semanal, quinzenal, mensal; sem fim ou N vezes) e **parcelas** em compras no cartão; a lista mostra "3 de 10" / "parcela 2/3".
+- **Fase 4 — Cartões:** cálculo de fatura, tela de cartões (fatura atual e futuras, limite, melhor dia), **informar fatura que já estava em aberto** antes de usar o app, **pagar fatura** (sai da conta corrente no vencimento).
+- **Fase 5 — Hoje, Totais e Livre por dia:** cálculos 5.1, 5.2 e 5.7 + tela Hoje completa (**visão geral**: contas chegando, situação das contas) + Totais do mês e economizado.
 - **Fase 6 — Reserva, metas e investimentos:** cálculos 5.4 e 5.5, snapshots, telas.
 - **Fase 7 — Análise e previsão:** "Para onde foi" + cálculos 5.6 e 5.8 + gráficos.
 - **Fase 8 — Acabamento:** backup JSON, estados vazios, revisão visual mobile, deploy na Vercel e instruções para instalar no celular.
@@ -260,6 +264,7 @@ Cada fase termina com o app rodando e os testes passando.
 - **Cores do saldo:** vermelho = negativo; amarelo = o saldo do dia não cobre o que ainda vai sair da conta até o fim do mês; verde = cobre.
 - **Fixos:** os previstos de cada mês são criados quando o mês é aberto. No primeiro mês, fixos com dia anterior ao início do uso entram como já pagos. Editar um fixo refaz os previstos ainda não pagos deste mês em diante; excluir apaga esses previstos e mantém o histórico pago.
 - **Lançamento futuro ou entrada incerta** é salvo como `previsto` por padrão; o usuário pode marcar "já foi pago" / "já caiu".
+- **Repetições** (pedido do usuário: comissão que cai toda semana): qualquer lançamento pode repetir semanal, quinzenal ou mensal, sem fim ou por N vezes. Por baixo é uma `Recorrencia` com `fim`. Aparecem em Configurações › Fixos e repetições.
 - **Referência visual:** o usuário enviou prints de um app de finanças que gosta (grade de saldos dia a dia, totais do mês, economizado). Serve de inspiração, não de cópia: a ideia é ser mais visual e mais simples.
 
 ## 9. Fora da v1 (já previsto na arquitetura)

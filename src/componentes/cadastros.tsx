@@ -4,6 +4,8 @@ import { repositorio } from '../data/repositorio';
 import { useConsulta } from '../data/useConsulta';
 import { formatarReais, formatarTaxa } from '../calculos/dinheiro';
 import { ROTULO_CERTEZA, ROTULO_TIPO_FONTE } from '../calculos/padroes';
+import { ROTULO_FREQUENCIA, totalDeOcorrencias } from '../calculos/recorrencias';
+import { formatarData } from '../calculos/datas';
 import type { Cartao, Categoria, Conta, FonteRenda, Id, Recorrencia } from '../tipos';
 import { FormCartao, FormCategoria, FormConta, FormFonte, FormRecorrencia } from './formularios';
 import { Folha, LinhaItem, Segmentos } from './ui';
@@ -103,14 +105,18 @@ export function CadastroFixos() {
   const contas = useConsulta(() => repositorio.contas.listar(), []);
   const icone = (id?: Id) => categorias.find((c) => c.id === id)?.icone ?? '•';
   return (
-    <Gerenciador<Recorrencia> itens={recs} vazio="Nenhum fixo. Ex.: aluguel, internet, academia, assinaturas."
+    <Gerenciador<Recorrencia> itens={recs} vazio="Nada que se repete ainda. Ex.: aluguel, internet, comissão semanal."
       rotuloAdicionar="Adicionar fixo" tituloNovo="Novo fixo" tituloEditar="Editar fixo"
       desabilitado={contas && contas.length === 0 ? 'Cadastre uma conta antes: é dela que os fixos saem.' : undefined}
       linha={(r, abrir) => (
         <LinhaItem key={r.id} aoTocar={abrir}
           marcador={<span className="w-7 text-center text-xl" aria-hidden="true">{icone(r.modelo.categoriaId)}</span>}
           titulo={<>{r.modelo.descricao}{!r.ativa && <Selo>pausado</Selo>}</>}
-          sub={`Todo dia ${r.diaDoMes}${r.modelo.tipo === 'entrada' ? ` · entrada ${ROTULO_CERTEZA[r.modelo.certeza ?? 'garantida'].toLowerCase()}` : ''}`}
+          sub={[
+            (r.frequencia ?? 'mensal') === 'mensal' ? `Todo dia ${r.diaDoMes}` : ROTULO_FREQUENCIA[r.frequencia!],
+            r.fim ? `${totalDeOcorrencias(r) ?? ''} vezes, até ${formatarData(r.fim)}` : null,
+            r.modelo.tipo === 'entrada' ? `entrada ${ROTULO_CERTEZA[r.modelo.certeza ?? 'garantida'].toLowerCase()}` : null,
+          ].filter(Boolean).join(' · ')}
           direita={<span className={r.modelo.tipo === 'entrada' ? 'text-entrada' : 'text-saida'}>
             {r.modelo.tipo === 'entrada' ? '+' : '−'}{formatarReais(r.modelo.valor ?? 0)}</span>} />
       )}

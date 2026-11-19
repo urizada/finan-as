@@ -40,7 +40,10 @@ export function validarRecorrencia(r: Partial<Recorrencia>): Erros {
   const m = r.modelo ?? {};
   if (vazio(m.descricao)) e.descricao = 'Diga o que é, ex.: Aluguel.';
   if (!Number.isInteger(m.valor) || (m.valor ?? 0) <= 0) e.valor = 'Informe o valor.';
-  if (!diaValido(r.diaDoMes ?? 0)) e.diaDoMes = 'Use um dia de 1 a 31.';
+  const freq = r.frequencia ?? 'mensal';
+  if (freq === 'mensal' && !diaValido(r.diaDoMes ?? 0)) e.diaDoMes = 'Use um dia de 1 a 31.';
+  if (freq !== 'mensal' && !r.dataInicio) e.dataInicio = 'Escolha a data da primeira vez.';
+  if (r.fim && r.dataInicio && r.fim < r.dataInicio) e.fim = 'O fim precisa ser depois do início.';
   if (vazio(m.contaId) && vazio(m.cartaoId)) e.contaId = 'Escolha onde cai ou de onde sai.';
   return e;
 }

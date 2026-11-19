@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { repositorio } from '../data/repositorio';
 import { useConsulta } from '../data/useConsulta';
 import { excluirRecorrencia, reaplicarRecorrencia } from '../data/servicos';
-import { hojeISO } from '../calculos/datas';
+import { hojeISO, mesDe, somarMeses } from '../calculos/datas';
+import { dataDaOcorrencia, dataDaRecorrencia, ROTULO_FREQUENCIA, totalDeOcorrencias } from '../calculos/recorrencias';
 import { formatarTaxa, textoParaTaxa } from '../calculos/dinheiro';
 import { separarPalavrasChave } from '../calculos/texto';
 import {
@@ -13,15 +14,18 @@ import {
 import {
   validarCartao, validarCategoria, validarConta, validarFonte, validarRecorrencia, valido, type Erros,
 } from '../calculos/validacoes';
-import type { Cartao, Categoria, Certeza, Conta, FonteRenda, Recorrencia, TipoFonteRenda } from '../tipos';
+import type { Cartao, Categoria, Certeza, Conta, FonteRenda, Frequencia, Recorrencia, TipoFonteRenda } from '../tipos';
+import { CampoVezes } from './lancamentos';
 import { Botao, CampoEscolha, CampoNumero, CampoTexto, CampoValor, Segmentos } from './ui';
 
 type PropsForm<T> = { item?: T; aoFechar: () => void };
 
 /** Rodapé com Salvar, Cancelar e (na edição) Excluir com confirmação em dois toques. */
-export function Acoes({ aoSalvar, aoCancelar, aoExcluir, bloqueioExclusao }: {
+export function Acoes({ aoSalvar, aoCancelar, aoExcluir, bloqueioExclusao, rotuloExcluir = 'Excluir', extra }: {
   aoSalvar: () => void; aoCancelar: () => void; aoExcluir?: () => void; bloqueioExclusao?: string;
+  rotuloExcluir?: string; extra?: { rotulo: string; acao: () => void };
 }) {
+  const [confirmarExtra, setConfirmarExtra] = useState(false);
   const [confirmar, setConfirmar] = useState(false);
   return (
     <div className="mt-2 flex flex-col gap-2">
@@ -33,9 +37,14 @@ export function Acoes({ aoSalvar, aoCancelar, aoExcluir, bloqueioExclusao }: {
         <p className="pt-1 text-center text-sm text-texto-2">{bloqueioExclusao}</p>
       ) : (
         <Botao tipo="perigo" onClick={() => (confirmar ? aoExcluir() : setConfirmar(true))}>
-          {confirmar ? 'Toque de novo para excluir' : 'Excluir'}
+          {confirmar ? 'Toque de novo para excluir' : rotuloExcluir}
         </Botao>
       ))}
+      {extra && (
+        <Botao tipo="perigo" onClick={() => (confirmarExtra ? extra.acao() : setConfirmarExtra(true))}>
+          {confirmarExtra ? 'Toque de novo para confirmar' : extra.rotulo}
+        </Botao>
+      )}
     </div>
   );
 }
@@ -201,6 +210,19 @@ export function FormRecorrencia({ item, aoFechar }: PropsForm<Recorrencia>) {
   const [fonteId, setFonteId] = useState(m?.fonteRendaId ?? '');
   const [certeza, setCerteza] = useState<Certeza>(m?.certeza ?? 'garantida');
   const [ativa, setAtiva] = useState(item?.ativa ?? true);
+  const [freq, setFreq] = useState<Frequencia>(item?.frequencia ?? 'mensal');
+  const [inicio, setInicio] = useState(item?.dataInicio ?? hojeISO());
+  const [vezes, setVezes] = useState<number | null>(item ? totalDeOcorrencias(item) : null);
+
+  /** Mensal: a primeira vez é a próxima data do dia escolhido (ou a que já estava salva). */
+  const inicioMensal = (() => {
+    if (item?.dataInicio && (item.frequencia ?? 'mensal') === 'mensal') return item.dataInicio;
+    const d = Number(dia);
+    if (!(d >= 1 && d <= 31)) return hojeISO();
+    const nesteMes = dataDaRecorrencia(mesDe(hojeISO()), d);
+    return nesteMes >= hojeISO() ? nesteMes : dataDaRecorrencia(somarMeses(mesDe(hojeISO()), 1), d);
+  })();
+  const inicioFinal = freq === 'mensal' ? inicioMensal : inicio;
   const [erros, setErros] = useState<Erros>({});
 
   const ondePadrao = config?.contaPadraoId ? `conta:${config.contaPadraoId}` : contas[0] ? `conta:${contas[0].id}` : '';
@@ -218,7 +240,13 @@ export function FormRecorrencia({ item, aoFechar }: PropsForm<Recorrencia>) {
       fonteRendaId: tipo === 'entrada' && fonteId ? fonteId : undefined,
     };
     for (const k of Object.keys(modelo) as (keyof typeof modelo)[]) if (modelo[k] === undefined) delete modelo[k];
-    const dados: Omit<Recorrencia, 'id'> = { modelo, diaDoMes: Number(dia), ativa };
+    const dados: Omit<Recorrencia, 'id'> = {
+      modelo, ativa, frequencia: freq,
+      diaDoMes: freq === 'mensal' ? Number(dia) : Number(inicio.slice(8, 10)),
+      dataInicio: freq === 'mensal' && !vezes && !item?.dataInicio ? undefined : inicioFinal,
+      fim: vezes ? dataDaOcorrencia(inicioFinal, freq, vezes) : undefined,
+    };
+    if (vezes !== null && vezes < 2) { setErros({ vezes: 'Use 2 vezes ou mais, ou escolha "Sem fim".' }); return; }
     const e = validarRecorrencia(dados);
     setErros(e);
     if (!valido(e)) return;
@@ -238,9 +266,28 @@ export function FormRecorrencia({ item, aoFechar }: PropsForm<Recorrencia>) {
         opcoes={[{ valor: 'saida', rotulo: 'Conta a pagar' }, { valor: 'entrada', rotulo: 'Entrada fixa' }]} />
       <CampoTexto rotulo="O que é" valor={descricao} aoMudar={setDescricao} erro={erros.descricao}
         placeholder={tipo === 'saida' ? 'ex.: Aluguel, Internet, Academia' : 'ex.: Salário, Ajuda de custo'} autoFocus={!item} />
-      <div className="grid grid-cols-[1fr_7rem] gap-3">
-        <CampoValor rotulo="Valor por mês" valor={valor} aoMudar={setValor} erro={erros.valor} />
-        <CampoNumero rotulo="Todo dia" valor={dia} aoMudar={setDia} erro={erros.diaDoMes} />
+      <CampoEscolha rotulo="Repete" valor={freq} aoMudar={setFreq}
+        opcoes={(['mensal', 'quinzenal', 'semanal'] as Frequencia[]).map((f) => ({ valor: f, rotulo: ROTULO_FREQUENCIA[f] }))} />
+      {freq === 'mensal' ? (
+        <div className="grid grid-cols-[1fr_7rem] gap-3">
+          <CampoValor rotulo="Valor" valor={valor} aoMudar={setValor} erro={erros.valor} />
+          <CampoNumero rotulo="Todo dia" valor={dia} aoMudar={setDia} erro={erros.diaDoMes} />
+        </div>
+      ) : (
+        <>
+          <CampoValor rotulo="Valor de cada vez" valor={valor} aoMudar={setValor} erro={erros.valor} />
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="rec-inicio" className="text-sm font-bold text-texto-2">Primeira vez em</label>
+            <input id="rec-inicio" type="date" value={inicio} onChange={(e) => e.target.value && setInicio(e.target.value)}
+              className="rounded-2xl border border-borda bg-superficie px-4 py-3 text-base text-texto" />
+            {erros.dataInicio && <p className="text-sm font-semibold text-saida">{erros.dataInicio}</p>}
+          </div>
+        </>
+      )}
+      <div className="flex flex-col gap-1.5">
+        <span className="text-sm font-bold text-texto-2">Até quando</span>
+        <CampoVezes vezes={vezes} aoMudar={setVezes} inicio={inicioFinal} frequencia={freq} />
+        {erros.vezes && <p className="text-sm font-semibold text-saida">{erros.vezes}</p>}
       </div>
       <CampoEscolha rotulo="Categoria" valor={categoriaEscolhida} aoMudar={setCategoriaId}
         opcoes={catsDoTipo.map((c) => ({ valor: c.id, rotulo: `${c.icone} ${c.nome}` }))} />

@@ -50,7 +50,7 @@ export function Configuracoes() {
         <Secao titulo="Contas" descricao="Onde o dinheiro fica parado e disponível."><CadastroContas /></Secao>
         <Secao titulo="Cartões de crédito"><CadastroCartoes /></Secao>
         <Secao titulo="Fontes de renda"><CadastroFontes /></Secao>
-        <Secao titulo="Fixos" descricao="Contas que se repetem todo mês. Entram sozinhas como previstas."><CadastroFixos /></Secao>
+        <Secao titulo="Fixos e repetições" descricao="O que se repete (todo mês, a cada 15 dias ou toda semana). Entra sozinho como previsto."><CadastroFixos /></Secao>
         <Secao titulo="Categorias"><CadastroCategorias /></Secao>
 
         <Secao titulo="Backup">

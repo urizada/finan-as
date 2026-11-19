@@ -1,14 +1,15 @@
 // Peças da Fase 2: formulário de lançamento, linha da lista e seletor de mês.
 import { useId, useState } from 'react';
 import { repositorio } from '../data/repositorio';
-import { marcarComoPago } from '../data/servicos';
+import { criarLancamento, excluirParcelas, marcarComoPago } from '../data/servicos';
 import type { Cadastros } from '../data/useCadastros';
 import { formatarData, hojeISO, nomeDoMes, paraISO, somarMeses } from '../calculos/datas';
-import { formatarReais } from '../calculos/dinheiro';
+import { dividirCentavos, formatarReais } from '../calculos/dinheiro';
+import { ROTULO_FREQUENCIA, dataDaOcorrencia, rotuloRepeticao } from '../calculos/recorrencias';
 import { statusSugerido, validarLancamento } from '../calculos/lancamentos';
 import { NOME_OUTROS_ENTRADA, NOME_OUTROS_SAIDA, ROTULO_CERTEZA } from '../calculos/padroes';
 import { valido, type Erros } from '../calculos/validacoes';
-import type { Certeza, DataISO, Lancamento, MesRef } from '../tipos';
+import type { Certeza, DataISO, Frequencia, Lancamento, MesRef } from '../tipos';
 import { Acoes } from './formularios';
 import { IconeSeta, IconeVoltar } from './Icones';
 import { Campo, CampoEscolha, CampoTexto, CampoValor, Segmentos } from './ui';
@@ -62,18 +63,54 @@ function CampoData({ valor, aoMudar, erro }: { valor: DataISO; aoMudar: (d: Data
   );
 }
 
-export function FormLancamento({ item, cad, dataInicial, aoFechar }: {
-  item?: Lancamento; cad: Cadastros; dataInicial?: DataISO; aoFechar: () => void;
+export interface InicialLancamento extends Partial<Omit<Lancamento, 'id'>> {
+  parcelas?: number;
+  frequencia?: Frequencia;
+  vezes?: number | null;
+}
+
+type Repetir = 'nao' | Frequencia;
+
+/** "Sem fim" ou "N vezes", com a data da última vez. */
+export function CampoVezes({ vezes, aoMudar, inicio, frequencia }: {
+  vezes: number | null; aoMudar: (v: number | null) => void; inicio: DataISO; frequencia: Frequencia;
 }) {
-  const [tipo, setTipo] = useState<'saida' | 'entrada'>(item?.tipo === 'entrada' ? 'entrada' : 'saida');
-  const [valor, setValor] = useState(item?.valor ?? 0);
-  const [descricao, setDescricao] = useState(item?.descricao ?? '');
-  const [data, setData] = useState(item?.data ?? dataInicial ?? hojeISO());
-  const [categoriaId, setCategoriaId] = useState(item?.categoriaId ?? '');
-  const [onde, setOnde] = useState(item?.cartaoId ? `cartao:${item.cartaoId}` : item?.contaId ? `conta:${item.contaId}` : '');
-  const [certeza, setCerteza] = useState<Certeza>(item?.certeza ?? 'garantida');
-  const [fonteId, setFonteId] = useState(item?.fonteRendaId ?? '');
-  const [aconteceu, setAconteceu] = useState<boolean | null>(item ? item.status === 'realizado' : null);
+  const [texto, setTexto] = useState(vezes ? String(vezes) : '');
+  const n = vezes && vezes >= 2 ? vezes : null;
+  return (
+    <div className="flex flex-col gap-2">
+      <Segmentos valor={vezes === null ? 'sempre' : 'vezes'} aoMudar={(v) => aoMudar(v === 'sempre' ? null : Number(texto) || 2)}
+        opcoes={[{ valor: 'sempre', rotulo: 'Sem fim' }, { valor: 'vezes', rotulo: 'Número de vezes' }]} />
+      {vezes !== null && (
+        <div className="flex items-center gap-3">
+          <input inputMode="numeric" aria-label="Quantas vezes" value={texto}
+            onChange={(e) => { const t = e.target.value.replace(/\D/g, '').slice(0, 3); setTexto(t); aoMudar(Number(t) || 0); }}
+            className="w-20 rounded-2xl border border-borda bg-superficie px-3 py-2.5 text-center text-base font-bold" />
+          <span className="text-sm text-texto-2">
+            {n ? <>vezes · a última em <b className="text-texto">{formatarData(dataDaOcorrencia(inicio, frequencia, n))}</b></> : 'vezes (2 ou mais)'}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function FormLancamento({ item, cad, dataInicial, inicial, aoFechar }: {
+  item?: Lancamento; cad: Cadastros; dataInicial?: DataISO; inicial?: InicialLancamento; aoFechar: () => void;
+}) {
+  const base = item ?? inicial;
+  const [tipo, setTipo] = useState<'saida' | 'entrada'>(base?.tipo === 'entrada' ? 'entrada' : 'saida');
+  const [valor, setValor] = useState(base?.valor ?? 0);
+  const [descricao, setDescricao] = useState(base?.descricao ?? '');
+  const [data, setData] = useState(base?.data ?? dataInicial ?? hojeISO());
+  const [categoriaId, setCategoriaId] = useState(base?.categoriaId ?? '');
+  const [onde, setOnde] = useState(base?.cartaoId ? `cartao:${base.cartaoId}` : base?.contaId ? `conta:${base.contaId}` : '');
+  const [certeza, setCerteza] = useState<Certeza>(base?.certeza ?? 'garantida');
+  const [fonteId, setFonteId] = useState(base?.fonteRendaId ?? '');
+  const [aconteceu, setAconteceu] = useState<boolean | null>(item ? item.status === 'realizado' : inicial?.status ? inicial.status === 'realizado' : null);
+  const [parcelas, setParcelas] = useState(inicial?.parcelas ?? 1);
+  const [repetir, setRepetir] = useState<Repetir>(inicial?.frequencia ?? 'nao');
+  const [vezes, setVezes] = useState<number | null>(inicial?.vezes ?? null);
   const [erros, setErros] = useState<Erros>({});
 
   const catsDoTipo = cad.categorias.filter((c) => c.tipo === tipo).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
@@ -81,9 +118,14 @@ export function FormLancamento({ item, cad, dataInicial, aoFechar }: {
   const categoriaEscolhida = catsDoTipo.some((c) => c.id === categoriaId) ? categoriaId : outros?.id ?? '';
   const ondePadrao = `conta:${cad.contaPadraoId ?? cad.contas[0]?.id ?? ''}`;
   const ondeEscolhido = onde && !(tipo === 'entrada' && onde.startsWith('cartao:')) ? onde : ondePadrao;
+  const noCartao = tipo === 'saida' && ondeEscolhido.startsWith('cartao:');
   const certezaFinal: Certeza = tipo === 'saida' ? 'garantida' : certeza;
   const realizado = aconteceu ?? statusSugerido(data, hojeISO(), certezaFinal) === 'realizado';
-  const fixo = item?.recorrenciaId;
+  const rec = cad.recorrencia(item?.recorrenciaId);
+  const parcela = item?.parcela;
+  const novo = !item;
+  const parcelasFinal = noCartao ? parcelas : 1;
+  const repetirFinal: Repetir = parcelasFinal > 1 ? 'nao' : repetir;
 
   async function salvar() {
     const [qual, id] = ondeEscolhido.split(':');
@@ -95,12 +137,17 @@ export function FormLancamento({ item, cad, dataInicial, aoFechar }: {
       cartaoId: qual === 'cartao' ? id : undefined,
       fonteRendaId: tipo === 'entrada' && fonteId ? fonteId : undefined,
     };
+    if (!item) delete (dados as Partial<Lancamento>).id;
     for (const k of Object.keys(dados) as (keyof typeof dados)[]) if (dados[k] === undefined) delete dados[k];
     const e = validarLancamento(dados);
+    if (novo && repetirFinal !== 'nao' && vezes !== null && vezes < 2) e.vezes = 'Use 2 vezes ou mais, ou escolha "Sem fim".';
     setErros(e);
     if (!valido(e)) return;
     if (item) await repositorio.lancamentos.salvar({ ...dados, id: item.id });
-    else await repositorio.lancamentos.criar(dados);
+    else await criarLancamento(dados, {
+      parcelas: parcelasFinal,
+      repeticao: repetirFinal !== 'nao' ? { frequencia: repetirFinal, vezes } : undefined,
+    });
     aoFechar();
   }
 
@@ -111,15 +158,45 @@ export function FormLancamento({ item, cad, dataInicial, aoFechar }: {
 
   return (
     <div className="flex flex-col gap-4">
-      {fixo && <p className="rounded-2xl bg-superficie-2 px-4 py-3 text-sm text-texto-2">Veio de um fixo. O que mudar aqui vale só para este mês.</p>}
+      {rec && (
+        <p className="rounded-2xl bg-superficie-2 px-4 py-3 text-sm text-texto-2">
+          Repetição ({rotuloRepeticao(rec, item!.recorrenciaData ?? item!.data)}). O que mudar aqui vale só para esta vez.
+          Para mudar todas, vá em Mais › Configurações › Fixos e repetições.
+        </p>
+      )}
+      {parcela && (
+        <p className="rounded-2xl bg-superficie-2 px-4 py-3 text-sm text-texto-2">
+          Parcela {parcela.numero} de {parcela.total}. O que mudar aqui vale só para esta parcela.
+        </p>
+      )}
       <Segmentos valor={tipo} aoMudar={setTipo} opcoes={[{ valor: 'saida', rotulo: 'Gasto' }, { valor: 'entrada', rotulo: 'Entrada' }]} />
-      <CampoValor rotulo="Valor" valor={valor} aoMudar={setValor} erro={erros.valor} />
+      <CampoValor rotulo={parcelasFinal > 1 ? 'Valor total da compra' : 'Valor'} valor={valor} aoMudar={setValor} erro={erros.valor} />
       <CampoTexto rotulo="O que foi" valor={descricao} aoMudar={setDescricao} erro={erros.descricao}
         placeholder={tipo === 'saida' ? 'ex.: Almoço' : 'ex.: Comissão de outubro'} />
       <CampoData valor={data} aoMudar={setData} erro={erros.data} />
       <CampoEscolha rotulo="Categoria" valor={categoriaEscolhida} aoMudar={setCategoriaId}
         opcoes={catsDoTipo.map((c) => ({ valor: c.id, rotulo: `${c.icone} ${c.nome}` }))} />
       <CampoEscolha rotulo={tipo === 'saida' ? 'Pagou com' : 'Caiu em'} valor={ondeEscolhido} aoMudar={setOnde} erro={erros.contaId} opcoes={opcoesOnde} />
+
+      {novo && noCartao && (
+        <div className="flex flex-col gap-1.5">
+          <CampoEscolha rotulo="Parcelas" valor={String(parcelas)} aoMudar={(v) => setParcelas(Number(v))}
+            opcoes={Array.from({ length: 24 }, (_, k) => ({ valor: String(k + 1), rotulo: k === 0 ? 'À vista' : `${k + 1}x` }))} />
+          {parcelas > 1 && valor > 0 && (
+            <p className="text-sm text-texto-2">{parcelas}× de <b className="text-texto">{formatarReais(dividirCentavos(valor, parcelas)[0])}</b>, uma em cada fatura.</p>
+          )}
+        </div>
+      )}
+      {novo && parcelasFinal === 1 && (
+        <div className="flex flex-col gap-2">
+          <CampoEscolha rotulo="Repetir" valor={repetir} aoMudar={setRepetir}
+            opcoes={[{ valor: 'nao', rotulo: 'Não repete' }, ...(['semanal', 'quinzenal', 'mensal'] as Frequencia[]).map((f) => ({ valor: f, rotulo: ROTULO_FREQUENCIA[f] }))]}
+            ajuda={repetir === 'nao' ? 'Para comissão semanal, assinatura ou conta que se repete.' : undefined} />
+          {repetir !== 'nao' && <CampoVezes vezes={vezes} aoMudar={setVezes} inicio={data} frequencia={repetir} />}
+          {erros.vezes && <p className="text-sm font-semibold text-saida">{erros.vezes}</p>}
+        </div>
+      )}
+
       {tipo === 'entrada' && (
         <>
           <Segmentos rotulo="Certeza" valor={certeza} aoMudar={(c) => { setCerteza(c); setAconteceu(null); }}
@@ -134,12 +211,14 @@ export function FormLancamento({ item, cad, dataInicial, aoFechar }: {
       <label className="flex items-center gap-3 rounded-2xl bg-superficie px-4 py-3">
         <input type="checkbox" checked={realizado} onChange={(e) => setAconteceu(e.target.checked)} className="h-5 w-5 accent-[var(--color-destaque)]" />
         <span>
-          <span className="block font-bold">{tipo === 'saida' ? 'Já foi pago' : 'Já caiu na conta'}</span>
+          <span className="block font-bold">{tipo === 'saida' ? 'Já foi pago' : 'Já caiu na conta'}{novo && (repetirFinal !== 'nao' || parcelasFinal > 1) ? ' (a primeira)' : ''}</span>
           <span className="block text-sm text-texto-2">Desmarcado, fica como previsto.</span>
         </span>
       </label>
       <Acoes aoSalvar={salvar} aoCancelar={aoFechar}
-        aoExcluir={item ? async () => { await repositorio.lancamentos.excluir(item.id); aoFechar(); } : undefined} />
+        aoExcluir={item ? async () => { await repositorio.lancamentos.excluir(item.id); aoFechar(); } : undefined}
+        rotuloExcluir={parcela ? 'Excluir só esta parcela' : undefined}
+        extra={parcela ? { rotulo: `Excluir as ${parcela.total} parcelas`, acao: async () => { await excluirParcelas(parcela.grupoId); aoFechar(); } } : undefined} />
     </div>
   );
 }
@@ -150,7 +229,9 @@ export function LinhaLancamento({ l, cad, aoTocar }: { l: Lancamento; cad: Cadas
   const onde = l.cartaoId ? `Cartão ${cad.cartao(l.cartaoId)?.nome ?? ''}` : cad.conta(l.contaId)?.nome;
   const entrada = l.tipo === 'entrada';
   const previsto = l.status === 'previsto';
-  const sub = [cat?.nome, onde, l.recorrenciaId ? 'fixo' : null, entrada && l.certeza !== 'garantida' ? ROTULO_CERTEZA[l.certeza].toLowerCase() : null]
+  const rec = cad.recorrencia(l.recorrenciaId);
+  const repete = l.parcela ? `parcela ${l.parcela.numero}/${l.parcela.total}` : rec ? rotuloRepeticao(rec, l.recorrenciaData ?? l.data) : l.recorrenciaId ? 'fixo' : null;
+  const sub = [cat?.nome, onde, repete, entrada && l.certeza !== 'garantida' ? ROTULO_CERTEZA[l.certeza].toLowerCase() : null]
     .filter(Boolean).join(' · ');
   return (
     <li className="flex items-center">

@@ -1,9 +1,11 @@
 // Operações que combinam repositório + cálculos puros. Componentes usam estas funções, não o Dexie.
 import { repositorio } from './repositorio';
 import { diasNoMes, hojeISO, mesDe } from '../calculos/datas';
-import { gerarPrevistosDoMes } from '../calculos/recorrencias';
+import { dataDaOcorrencia, gerarPrevistosDoMes } from '../calculos/recorrencias';
+import { faturaDaCompra, gerarParcelas } from '../calculos/cartao';
+import { aprenderPalavra } from '../calculos/parser';
 import { saldosDoMes, type SaldoDia } from '../calculos/saldos';
-import type { DataISO, Id, Lancamento, MesRef } from '../tipos';
+import type { DataISO, Frequencia, Id, Lancamento, MesRef, Recorrencia } from '../tipos';
 
 /** Primeiro dia em que você informou saldo (início do uso do app). */
 export async function dataDeInicio(): Promise<DataISO> {
@@ -60,4 +62,60 @@ export async function gradeDoMes(mes: MesRef): Promise<{ dias: SaldoDia[]; lanca
   const desde = inicio < `${mes}-01` ? inicio : `${mes}-01`;
   const lancamentos = await repositorio.lancamentos.porPeriodo(desde, fim);
   return { dias: saldosDoMes(mes, contas, lancamentos), lancamentos: lancamentos.filter((l) => l.data.startsWith(mes)) };
+}
+
+export interface OpcoesNovo {
+  /** Compra no cartão em N vezes. */
+  parcelas?: number;
+  /** Repetir a partir da data do lançamento. vezes null = sem fim. */
+  repeticao?: { frequencia: Frequencia; vezes: number | null };
+}
+
+/**
+ * Cria um lançamento novo: simples, parcelado no cartão ou que se repete.
+ * Devolve uma função que desfaz tudo o que foi criado.
+ */
+export async function criarLancamento(dados: Omit<Lancamento, 'id'>, op: OpcoesNovo = {}): Promise<() => Promise<void>> {
+  const cartao = dados.cartaoId ? await repositorio.cartoes.obter(dados.cartaoId) : undefined;
+
+  if (op.repeticao) {
+    const { frequencia, vezes } = op.repeticao;
+    const { data, status: _s, recorrenciaId: _r, recorrenciaData: _d, parcela: _p, faturaRef: _f, ...modelo } = dados;
+    const rec: Omit<Recorrencia, 'id'> = {
+      modelo, frequencia, diaDoMes: Number(data.slice(8, 10)), dataInicio: data, ativa: true,
+      ...(vezes ? { fim: dataDaOcorrencia(data, frequencia, vezes) } : {}),
+    };
+    const salvo = await repositorio.recorrencias.criar(rec);
+    await garantirFixosDoMes(mesDe(data));
+    if (mesDe(hojeISO()) !== mesDe(data)) await garantirFixosDoMes(mesDe(hojeISO()));
+    const primeiro = (await repositorio.lancamentos.porRecorrencia(salvo.id)).find((l) => l.recorrenciaData === data);
+    if (primeiro && primeiro.status !== dados.status) await repositorio.lancamentos.atualizar(primeiro.id, { status: dados.status });
+    return async () => {
+      const ls = await repositorio.lancamentos.porRecorrencia(salvo.id);
+      await repositorio.lancamentos.excluirVarios(ls.map((l) => l.id));
+      await repositorio.recorrencias.excluir(salvo.id);
+    };
+  }
+
+  if (cartao && dados.tipo === 'saida' && (op.parcelas ?? 1) > 1) {
+    const ps = gerarParcelas({ ...dados, cartaoId: cartao.id }, op.parcelas!, cartao.diaFechamento, crypto.randomUUID());
+    const criados = await repositorio.lancamentos.criarVarios(ps);
+    return () => repositorio.lancamentos.excluirVarios(criados.map((l) => l.id));
+  }
+
+  const final = cartao ? { ...dados, faturaRef: faturaDaCompra(dados.data, cartao.diaFechamento) } : dados;
+  const criado = await repositorio.lancamentos.criar(final);
+  return () => repositorio.lancamentos.excluir(criado.id);
+}
+
+/** Exclui todas as parcelas de uma compra parcelada. */
+export async function excluirParcelas(grupoId: Id): Promise<void> {
+  const ls = await repositorio.lancamentos.porGrupoParcela(grupoId);
+  await repositorio.lancamentos.excluirVarios(ls.map((l) => l.id));
+}
+
+/** O app aprende a palavra para a categoria escolhida (e tira das outras do mesmo tipo). */
+export async function ensinarCategoria(palavra: string, categoriaId: Id): Promise<void> {
+  const mudadas = aprenderPalavra(await repositorio.categorias.listar(), palavra, categoriaId);
+  for (const c of mudadas) await repositorio.categorias.salvar(c);
 }
