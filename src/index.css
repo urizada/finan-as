@@ -1,0 +1,71 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/manrope';
+
+/* Tema: tokens de cor. Claro é o padrão; o escuro entra com data-tema="escuro" no <html>. */
+@theme {
+  --font-sans: 'Manrope Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  --color-fundo: #f3f6f4;
+  --color-superficie: #ffffff;
+  --color-superficie-2: #e9efec;
+  --color-borda: #dde5e1;
+  --color-texto: #13201b;
+  --color-texto-2: #5f6f68;
+  --color-destaque: #0f8a5c;
+  --color-destaque-texto: #ffffff;
+  --color-entrada: #13955f;
+  --color-saida: #d2492f;
+  --color-cartao: #6d4ad8;
+  --color-alerta: #a86a00;
+  /* fundos do saldo projetado na grade de Saldos */
+  --color-saldo-ok: #d9f5e6;
+  --color-saldo-apertado: #fcefc7;
+  --color-saldo-negativo: #fbdcd5;
+}
+
+[data-tema='escuro'] {
+  --color-fundo: #0e1412;
+  --color-superficie: #161e1b;
+  --color-superficie-2: #1f2925;
+  --color-borda: #2a3631;
+  --color-texto: #e8efec;
+  --color-texto-2: #94a39c;
+  --color-destaque: #3ddc97;
+  --color-destaque-texto: #06231a;
+  --color-entrada: #3ddc97;
+  --color-saida: #ff7a6b;
+  --color-cartao: #a68bff;
+  --color-alerta: #f5b84a;
+  --color-saldo-ok: #173a2b;
+  --color-saldo-apertado: #3b3218;
+  --color-saldo-negativo: #43221c;
+  color-scheme: dark;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-fundo);
+  color: var(--color-texto);
+  font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-destaque);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
