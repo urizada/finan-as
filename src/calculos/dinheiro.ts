@@ -33,3 +33,26 @@ export function dividirCentavos(valor: Centavos, partes: number): Centavos[] {
 export function garantirInteiro(valor: number): void {
   if (!Number.isInteger(valor)) throw new Error(`Valor em centavos precisa ser inteiro: ${valor}`);
 }
+
+/**
+ * Campo de valor estilo app de banco: os dígitos digitados enchem da direita.
+ * "1" → 1 (R$ 0,01), "123456" → 123456 (R$ 1.234,56). Ignora tudo que não for dígito.
+ */
+export function digitosParaCentavos(texto: string): Centavos {
+  const digitos = texto.replace(/\D/g, '').replace(/^0+/, '').slice(0, 13);
+  return digitos ? Number(digitos) : 0;
+}
+
+/** "3,5" ou "3.5" ou "3,5%" → 0.035. Devolve null se inválido ou fora de 0–100. */
+export function textoParaTaxa(texto: string): number | null {
+  const limpo = texto.trim().replace('%', '').replace(',', '.');
+  if (!/^\d+(\.\d+)?$/.test(limpo)) return null;
+  const pct = Number(limpo);
+  if (pct < 0 || pct > 100) return null;
+  return Math.round(pct * 1000) / 100000;
+}
+
+/** 0.035 → "3,5%". */
+export function formatarTaxa(taxa: number): string {
+  return `${(Math.round(taxa * 100000) / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 3 })}%`;
+}

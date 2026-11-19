@@ -19,6 +19,8 @@ export interface Config {
   destinoSobraMes: 'reserva' | 'proximoMes';
   onboardingConcluido: boolean;
   tema: 'claro' | 'escuro';
+  /** Conta usada quando o lançamento não diz qual (lançamento rápido, fixos). */
+  contaPadraoId?: Id;
 }
 
 export interface Conta {
@@ -26,6 +28,8 @@ export interface Conta {
   nome: string;
   tipo: 'corrente' | 'carteira';
   saldoInicial: Centavos;
+  /** Dia em que o saldo inicial foi informado. O saldo projetado parte daqui. */
+  dataSaldoInicial: DataISO;
 }
 
 export interface Categoria {

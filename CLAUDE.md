@@ -52,11 +52,15 @@ Config {
   perfilRenda: 'fixa' | 'variavel' | 'autonoma' | 'sazonal' | 'mista';
   mesesReservaAlvo: number;          // padrão: 6 (fixa: 3–6, variável: 6–12)
   destinoSobraMes: 'reserva' | 'proximoMes';
+  tema: 'claro' | 'escuro';          // padrão: 'claro'
+  contaPadraoId?;                    // conta usada quando o lançamento não diz qual
+  onboardingConcluido: boolean;
 }
 
 Conta {                              // onde o dinheiro fica parado e disponível
   id; nome; tipo: 'corrente' | 'carteira';
   saldoInicial: Centavos;
+  dataSaldoInicial: string;          // dia em que o saldo foi informado; o saldo projetado parte daqui
 }
 
 Categoria {

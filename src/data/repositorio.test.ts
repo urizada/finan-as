@@ -18,7 +18,7 @@ describe('repositorio (Dexie)', () => {
   });
 
   it('CRUD de contas', async () => {
-    const c = await repo.contas.criar({ nome: 'Nubank', tipo: 'corrente', saldoInicial: 150000 });
+    const c = await repo.contas.criar({ nome: 'Nubank', tipo: 'corrente', saldoInicial: 150000, dataSaldoInicial: '2026-11-19' });
     expect(c.id).toBeTruthy();
     await repo.contas.atualizar(c.id, { saldoInicial: 200000 });
     expect((await repo.contas.obter(c.id))?.saldoInicial).toBe(200000);
@@ -35,7 +35,7 @@ describe('repositorio (Dexie)', () => {
   });
 
   it('exporta e importa backup', async () => {
-    await repo.contas.criar({ nome: 'Carteira', tipo: 'carteira', saldoInicial: 5000 });
+    await repo.contas.criar({ nome: 'Carteira', tipo: 'carteira', saldoInicial: 5000, dataSaldoInicial: '2026-11-19' });
     const backup = await repo.exportar();
     const outro = criarRepositorioDexie(`teste-${n++}`);
     await outro.importar(JSON.parse(JSON.stringify(backup)));
@@ -45,9 +45,9 @@ describe('repositorio (Dexie)', () => {
   it('avisa ouvintes quando muda', async () => {
     let avisos = 0;
     const parar = repo.aoMudar(() => avisos++);
-    await repo.contas.criar({ nome: 'A', tipo: 'corrente', saldoInicial: 0 });
+    await repo.contas.criar({ nome: 'A', tipo: 'corrente', saldoInicial: 0, dataSaldoInicial: '2026-11-19' });
     parar();
-    await repo.contas.criar({ nome: 'B', tipo: 'corrente', saldoInicial: 0 });
+    await repo.contas.criar({ nome: 'B', tipo: 'corrente', saldoInicial: 0, dataSaldoInicial: '2026-11-19' });
     expect(avisos).toBe(1);
   });
 });

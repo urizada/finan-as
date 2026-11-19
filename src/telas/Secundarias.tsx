@@ -23,8 +23,3 @@ export const Investimentos = () => (
     <EmConstrucao fase={6} itens={['Total da carteira', 'Distribuição por tipo', 'Atualizar saldo e ver evolução']} />
   </Tela>
 );
-export const Configuracoes = () => (
-  <Tela titulo="Configurações" voltar={voltar}>
-    <EmConstrucao fase={1} itens={['Perfil de renda', 'Contas, cartões e categorias', 'Fontes de renda e recorrências', 'Backup em JSON (Fase 8)']} />
-  </Tela>
-);
