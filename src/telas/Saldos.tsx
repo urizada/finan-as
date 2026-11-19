@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FormLancamento, LinhaLancamento, SeletorMes, rotuloDia } from '../componentes/lancamentos';
 import { Folha } from '../componentes/ui';
-import { gradeDoMes } from '../data/servicos';
+import { desfazerPagamentoFatura, gradeDoMes, pagarFatura } from '../data/servicos';
 import { useCadastros } from '../data/useCadastros';
 import { useConsulta } from '../data/useConsulta';
 import { hojeISO, mesDe } from '../calculos/datas';
@@ -47,6 +47,8 @@ export function Saldos() {
   const diaHoje = grade?.dias.find((d) => d.data === hoje);
   const ultimo = grade?.dias[grade.dias.length - 1];
   const doDia = diaAberto ? grade?.lancamentos.filter((l) => l.data === diaAberto) ?? [] : [];
+  const faturasDoDia = diaAberto ? grade?.faturas.filter((f) => f.vencimento === diaAberto) ?? [] : [];
+  const provaveisFim = ultimo && ultimo.saldo !== null && ultimo.saldoComIncertas !== null ? ultimo.saldoComIncertas - ultimo.saldo : 0;
 
   return (
     <main className="mx-auto max-w-md px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-28">
@@ -54,7 +56,8 @@ export function Saldos() {
         <SeletorMes mes={mes} aoMudar={setMes} />
         <div className="mt-2 grid grid-cols-2 gap-2">
           <Resumo rotulo={diaHoje ? 'Saldo hoje' : 'Início do mês'} valor={diaHoje?.saldo ?? grade?.dias.find((d) => d.saldo !== null)?.saldo ?? null} />
-          <Resumo rotulo="Fim do mês" valor={ultimo?.saldo ?? null} estado={ultimo?.estado ?? null} />
+          <Resumo rotulo="Fim do mês" valor={ultimo?.saldo ?? null} estado={ultimo?.estado ?? null}
+            extra={provaveisFim > 0 ? `+${formatarReais(provaveisFim)} se as prováveis caírem` : undefined} />
         </div>
         <div className="mt-3 flex gap-1.5" role="tablist" aria-label="Coluna exibida">
           {COLUNAS.map((c) => (
@@ -90,6 +93,7 @@ export function Saldos() {
                   </span>
                   <span className={`flex items-center justify-end gap-1.5 px-3 tabular-nums ${v ? `font-bold ${col.cor}` : 'text-texto-2/40'}`}>
                     {coluna === 'fixos' && d.fixoPendente && <span className="h-2 w-2 rounded-full bg-alerta" title="Fixo a pagar" />}
+                    {coluna === 'saidas' && d.faturas > 0 && <span className="rounded bg-cartao/15 px-1 text-[10px] font-bold text-cartao">fatura</span>}
                     <span className={incerta ? 'underline decoration-dotted underline-offset-4' : ''}>{curto(v)}</span>
                   </span>
                   <span className={`flex items-center justify-end px-3 font-bold tabular-nums ${d.estado ? `${FUNDO[d.estado]} ${TEXTO[d.estado]}` : 'text-texto-2/40'}`}>
@@ -114,13 +118,39 @@ export function Saldos() {
           <FormLancamento item={editando === 'novo' ? undefined : editando} cad={cad} dataInicial={diaAberto} aoFechar={() => setEditando(null)} />
         ) : (
           <div className="flex flex-col gap-3">
-            {doDia.length > 0 ? (
+            {faturasDoDia.map((f) => {
+              const c = cad.cartao(f.cartaoId);
+              return (
+                <div key={`${f.cartaoId}${f.faturaRef}`} className="flex flex-col gap-2 rounded-2xl border border-borda bg-superficie px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-cartao/15 text-lg" aria-hidden="true">💳</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-bold">Fatura {c?.nome}</span>
+                      <span className="block text-sm text-texto-2">vence neste dia · sai de {cad.conta(f.contaId)?.nome ?? 'conta'}</span>
+                    </span>
+                    <span className={`shrink-0 text-right font-bold tabular-nums ${f.restante === 0 ? 'text-texto-2 line-through' : ''}`}>−{formatarReais(f.total)}</span>
+                  </div>
+                  {f.restante > 0 ? (
+                    <div className="flex items-center justify-between gap-2 pl-13">
+                      <span className="text-xs text-texto-2">{f.pago > 0 ? `Já pagou ${formatarReais(f.pago)}. Falta ${formatarReais(f.restante)}.` : 'Ainda não paga.'}</span>
+                      <button type="button" onClick={() => pagarFatura(f)} className="shrink-0 rounded-full border border-destaque px-3 py-1.5 text-sm font-bold text-destaque">Marcar como paga</button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between gap-2 pl-13">
+                      <span className="text-xs font-bold text-entrada">Paga ✓</span>
+                      <button type="button" onClick={() => desfazerPagamentoFatura(f)} className="shrink-0 text-xs font-bold text-texto-2">Desfazer</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {faturasDoDia.length === 0 && doDia.length === 0 ? (
+              <p className="rounded-2xl border border-dashed border-borda px-4 py-5 text-center text-sm text-texto-2">Nada lançado neste dia.</p>
+            ) : doDia.length > 0 ? (
               <ul className="divide-y divide-borda overflow-hidden rounded-2xl border border-borda bg-superficie">
                 {doDia.map((l) => <LinhaLancamento key={l.id} l={l} cad={cad} aoTocar={() => setEditando(l)} />)}
               </ul>
-            ) : (
-              <p className="rounded-2xl border border-dashed border-borda px-4 py-5 text-center text-sm text-texto-2">Nada lançado neste dia.</p>
-            )}
+            ) : null}
             <button type="button" onClick={() => setEditando('novo')} className="rounded-2xl bg-texto py-3.5 font-bold text-fundo">
               + Lançar neste dia
             </button>
@@ -131,11 +161,12 @@ export function Saldos() {
   );
 }
 
-function Resumo({ rotulo, valor, estado }: { rotulo: string; valor: number | null; estado?: EstadoSaldo | null }) {
+function Resumo({ rotulo, valor, estado, extra }: { rotulo: string; valor: number | null; estado?: EstadoSaldo | null; extra?: string }) {
   return (
     <div className={`rounded-2xl border border-borda px-3 py-2 ${estado ? FUNDO[estado] : 'bg-superficie'}`}>
       <p className="text-xs font-bold text-texto-2">{rotulo}</p>
       <p className={`text-lg font-extrabold tabular-nums ${valor !== null && valor < 0 ? 'text-saida' : ''}`}>{valor === null ? '—' : formatarReais(valor)}</p>
+      {extra && <p className="text-[11px] font-semibold leading-tight text-texto-2">{extra}</p>}
     </div>
   );
 }
@@ -151,8 +182,9 @@ function Legenda({ coluna }: { coluna: Coluna }) {
         {item('bg-saldo-apertado', 'não cobre o que falta pagar')}
         {item('bg-saldo-negativo', 'negativo')}
       </div>
-      <p>O saldo já desconta os fixos e só soma entradas garantidas. Compras no cartão entram quando a fatura for paga.</p>
+      <p>O saldo parte do que você tem na conta e desconta, em cada dia, os fixos, os gastos e as faturas dos cartões no vencimento. Só soma entradas certas.</p>
       {coluna === 'entradas' && <p>Valor sublinhado: inclui entrada provável ou possível (não está no saldo).</p>}
+      {coluna === 'cartao' && <p>Compras do dia no cartão. Elas saem da conta no vencimento da fatura (marcado como “fatura” em Saídas).</p>}
       {coluna === 'fixos' && <p className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-alerta" />fixo do dia ainda não marcado como pago.</p>}
     </div>
   );

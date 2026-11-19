@@ -8,6 +8,7 @@ import { statusSugerido } from '../calculos/lancamentos';
 import { NOME_OUTROS_ENTRADA, NOME_OUTROS_SAIDA, ROTULO_CERTEZA } from '../calculos/padroes';
 import { interpretar, type Rascunho } from '../calculos/parser';
 import { ROTULO_FREQUENCIA } from '../calculos/recorrencias';
+import { faturaDaCompra, vencimentoDaFatura } from '../calculos/cartao';
 import type { Certeza, Lancamento } from '../tipos';
 import type { InicialLancamento } from './lancamentos';
 
@@ -64,7 +65,7 @@ export function LancamentoRapido({ cad, aoDetalhes, autoFocus }: {
     const dados = paraLancamento(r);
     const desfazer = await criarLancamento(dados, {
       parcelas: r.cartaoId ? r.parcelas : 1,
-      repeticao: r.frequencia ? { frequencia: r.frequencia, vezes: r.vezes ?? null } : undefined,
+      repeticao: r.frequencia ? { frequencia: r.frequencia, vezes: r.vezes ?? null, certezaProximas: r.certezaProximas } : undefined,
     });
     // O app aprende: se você escolheu a categoria, a palavra passa a apontar para ela.
     if (ajuste.categoriaId && lido?.palavra && (ajuste.categoriaId !== lido.categoriaId || !lido.categoriaConfiante))
@@ -145,7 +146,9 @@ export function LancamentoRapido({ cad, aoDetalhes, autoFocus }: {
               </Chip>
             )}
             {r.tipo === 'entrada' && (
-              <Chip rotulo="Certeza" ativo={aberto === 'certeza'} aoTocar={() => alternar('certeza')}>{ROTULO_CERTEZA[r.certeza]}</Chip>
+              <Chip rotulo="Certeza" ativo={aberto === 'certeza'} aoTocar={() => alternar('certeza')}>
+                {r.certeza === 'garantida' ? (r.data > hoje ? 'Certo' : 'Já caiu') : ROTULO_CERTEZA[r.certeza]}
+              </Chip>
             )}
             {r.frequencia && (
               <span className="rounded-full bg-superficie-2 px-3 py-1.5 text-sm font-bold">
@@ -153,6 +156,15 @@ export function LancamentoRapido({ cad, aoDetalhes, autoFocus }: {
               </span>
             )}
           </div>
+          {cartao && (
+            <p className="-mt-1 text-sm text-texto-2">
+              {r.parcelas > 1 ? '1ª parcela na fatura' : 'Cai na fatura'} que vence em{' '}
+              <b className="text-texto">{formatarData(vencimentoDaFatura(faturaDaCompra(r.data, cartao.diaFechamento), cartao))}</b>.
+            </p>
+          )}
+          {r.tipo === 'entrada' && r.frequencia && r.certezaProximas && r.certezaProximas !== 'garantida' && (
+            <p className="-mt-1 text-sm text-texto-2">As próximas vezes entram como {ROTULO_CERTEZA[r.certezaProximas].toLowerCase()}s: aparecem na grade, mas não no saldo.</p>
+          )}
           {pedirCategoria && aberto !== 'categoria' && (
             <p className="-mt-1 text-sm text-texto-2">Não reconheci a categoria. Toque nela para escolher; o app aprende para a próxima.</p>
           )}
@@ -201,7 +213,8 @@ export function LancamentoRapido({ cad, aoDetalhes, autoFocus }: {
             <div className="flex gap-1.5">
               {(['garantida', 'provavel', 'possivel'] as Certeza[]).map((c) => (
                 <button key={c} type="button" onClick={() => ajustar({ certeza: c })}
-                  className={`flex-1 rounded-full px-3 py-1.5 text-sm font-bold ${c === r.certeza ? 'bg-texto text-fundo' : 'bg-superficie-2'}`}>{ROTULO_CERTEZA[c]}</button>
+                  className={`flex-1 rounded-full px-3 py-1.5 text-sm font-bold ${c === r.certeza ? 'bg-texto text-fundo' : 'bg-superficie-2'}`}>
+                  {c === 'garantida' ? (r.data > hoje ? 'Certo' : 'Já caiu') : c === 'provavel' ? 'Provável' : 'Talvez'}</button>
               ))}
             </div>
           )}

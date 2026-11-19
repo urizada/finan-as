@@ -47,6 +47,7 @@ export function agruparPorDia(ls: Lancamento[]): GrupoDia[] {
       data,
       itens: [...itens].sort((a, b) => (a.tipo === b.tipo ? b.valor - a.valor : a.tipo === 'entrada' ? -1 : 1)),
       entradas: itens.filter((l) => l.tipo === 'entrada').reduce((s, l) => s + l.valor, 0),
-      saidas: itens.filter((l) => l.tipo !== 'entrada').reduce((s, l) => s + l.valor, 0),
+      // pagamento de fatura não é gasto novo: as compras já foram contadas
+      saidas: itens.filter((l) => l.tipo === 'saida').reduce((s, l) => s + l.valor, 0),
     }));
 }

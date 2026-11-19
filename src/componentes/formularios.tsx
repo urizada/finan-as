@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { repositorio } from '../data/repositorio';
 import { useConsulta } from '../data/useConsulta';
-import { excluirRecorrencia, reaplicarRecorrencia } from '../data/servicos';
+import { excluirRecorrencia, faturaAnterior, reaplicarRecorrencia, salvarFaturaAnterior, vencimentoDaProxima } from '../data/servicos';
+import { formatarData } from '../calculos/datas';
 import { hojeISO, mesDe, somarMeses } from '../calculos/datas';
 import { dataDaOcorrencia, dataDaRecorrencia, ROTULO_FREQUENCIA, totalDeOcorrencias } from '../calculos/recorrencias';
 import { formatarTaxa, textoParaTaxa } from '../calculos/dinheiro';
@@ -115,7 +116,10 @@ export function FormCartao({ item, aoFechar }: PropsForm<Cartao>) {
   const [fechamento, setFechamento] = useState(String(item?.diaFechamento ?? ''));
   const [vencimento, setVencimento] = useState(String(item?.diaVencimento ?? ''));
   const [conta, setConta] = useState(item?.contaPagamentoId ?? '');
+  const anterior = useConsulta(async () => (item ? (await faturaAnterior(item.id))?.valor ?? 0 : 0), [item?.id]);
+  const [aberta, setAberta] = useState<number | null>(null);
   const [erros, setErros] = useState<Erros>({});
+  const diasOk = Number(fechamento) >= 1 && Number(fechamento) <= 31 && Number(vencimento) >= 1 && Number(vencimento) <= 31;
   const contaEscolhida = conta || config?.contaPadraoId || contas[0]?.id || '';
 
   async function salvar() {
@@ -125,8 +129,8 @@ export function FormCartao({ item, aoFechar }: PropsForm<Cartao>) {
     const e = validarCartao(dados);
     setErros(e);
     if (!valido(e)) return;
-    if (item) await repositorio.cartoes.salvar({ ...item, ...dados });
-    else await repositorio.cartoes.criar(dados);
+    const salvo = item ? await repositorio.cartoes.salvar({ ...item, ...dados }) : await repositorio.cartoes.criar(dados);
+    if (aberta !== null) await salvarFaturaAnterior(salvo.id, aberta);
     aoFechar();
   }
 
@@ -142,6 +146,8 @@ export function FormCartao({ item, aoFechar }: PropsForm<Cartao>) {
       <CampoEscolha rotulo="Fatura paga pela conta" valor={contaEscolhida} aoMudar={setConta} erro={erros.contaPagamentoId}
         opcoes={contas.map((c) => ({ valor: c.id, rotulo: c.nome }))}
         ajuda="No vencimento, o valor da fatura sai desta conta." />
+      <CampoValor rotulo="Fatura em aberto hoje" valor={aberta ?? anterior ?? 0} aoMudar={setAberta}
+        ajuda={`O que você já deve neste cartão (de antes de usar o app)${diasOk ? `. Sai da conta em ${formatarData(vencimentoDaProxima({ diaFechamento: Number(fechamento), diaVencimento: Number(vencimento) }))}` : ''}. Parcelas de compras antigas: lance a compra com as parcelas que faltam.`} />
       <Acoes aoSalvar={salvar} aoCancelar={aoFechar}
         aoExcluir={item ? async () => { await repositorio.cartoes.excluir(item.id); aoFechar(); } : undefined}
         bloqueioExclusao={usos ? 'Há fixos cobrados neste cartão. Troque o cartão deles antes de excluir.' : undefined} />

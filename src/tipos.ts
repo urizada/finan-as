@@ -76,6 +76,8 @@ export interface Lancamento {
   /** Data prevista da ocorrência do fixo/repetição (continua igual se o usuário mudar a data). */
   recorrenciaData?: DataISO;
   parcela?: Parcela;
+  /** Fatura que já estava aberta antes de começar a usar o app (não é gasto do mês). */
+  saldoAnterior?: boolean;
   destino?: { tipo: 'meta' | 'investimento'; id: Id };
 }
 

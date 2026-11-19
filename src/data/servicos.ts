@@ -1,11 +1,11 @@
 // Operações que combinam repositório + cálculos puros. Componentes usam estas funções, não o Dexie.
 import { repositorio } from './repositorio';
-import { diasNoMes, hojeISO, mesDe } from '../calculos/datas';
+import { diasNoMes, hojeISO, mesDe, somarMeses } from '../calculos/datas';
 import { dataDaOcorrencia, gerarPrevistosDoMes } from '../calculos/recorrencias';
-import { faturaDaCompra, gerarParcelas } from '../calculos/cartao';
+import { faturaDaCompra, gerarParcelas, proximaFaturaAPagar, vencimentoDaFatura, type Fatura } from '../calculos/cartao';
 import { aprenderPalavra } from '../calculos/parser';
 import { saldosDoMes, type SaldoDia } from '../calculos/saldos';
-import type { DataISO, Frequencia, Id, Lancamento, MesRef, Recorrencia } from '../tipos';
+import type { Centavos, Certeza, DataISO, Frequencia, Id, Lancamento, MesRef, Recorrencia } from '../tipos';
 
 /** Primeiro dia em que você informou saldo (início do uso do app). */
 export async function dataDeInicio(): Promise<DataISO> {
@@ -54,21 +54,70 @@ export async function marcarComoPago(id: Id, pago = true): Promise<void> {
   await repositorio.lancamentos.atualizar(id, { status: pago ? 'realizado' : 'previsto' });
 }
 
-/** Grade da tela Saldos para o mês. */
-export async function gradeDoMes(mes: MesRef): Promise<{ dias: SaldoDia[]; lancamentos: Lancamento[] }> {
-  await garantirFixosDoMes(mes);
-  const [contas, inicio] = await Promise.all([repositorio.contas.listar(), dataDeInicio()]);
+/**
+ * Grade da tela Saldos para o mês. Gera antes os fixos de todos os meses desde o início do uso,
+ * para o saldo de um mês futuro já descontar os meses do meio.
+ */
+export async function gradeDoMes(mes: MesRef): Promise<{ dias: SaldoDia[]; lancamentos: Lancamento[]; faturas: Fatura[] }> {
+  const inicio = await dataDeInicio();
+  for (let m = mesDe(inicio) < mes ? mesDe(inicio) : mes; m <= mes; m = somarMeses(m, 1)) await garantirFixosDoMes(m);
+  const [contas, cartoes] = await Promise.all([repositorio.contas.listar(), repositorio.cartoes.listar()]);
   const fim = `${mes}-${String(diasNoMes(mes)).padStart(2, '0')}`;
   const desde = inicio < `${mes}-01` ? inicio : `${mes}-01`;
   const lancamentos = await repositorio.lancamentos.porPeriodo(desde, fim);
-  return { dias: saldosDoMes(mes, contas, lancamentos), lancamentos: lancamentos.filter((l) => l.data.startsWith(mes)) };
+  const { dias, faturas } = saldosDoMes(mes, contas, lancamentos, cartoes);
+  return { dias, faturas: faturas.filter((f) => f.vencimento.startsWith(mes)), lancamentos: lancamentos.filter((l) => l.data.startsWith(mes)) };
+}
+
+/** Marca a fatura como paga: cria a saída da conta de pagamento com o que falta. */
+export async function pagarFatura(f: Fatura): Promise<void> {
+  if (f.restante <= 0) return;
+  const cartao = await repositorio.cartoes.obter(f.cartaoId);
+  const hoje = hojeISO();
+  await repositorio.lancamentos.criar({
+    tipo: 'transferencia', valor: f.restante, data: f.vencimento < hoje ? f.vencimento : hoje,
+    descricao: `Fatura ${cartao?.nome ?? 'do cartão'}`, contaId: f.contaId, cartaoId: f.cartaoId, faturaRef: f.faturaRef,
+    certeza: 'garantida', status: 'realizado',
+  });
+}
+
+/** Desfaz o pagamento da fatura (apaga as transferências dela). */
+export async function desfazerPagamentoFatura(f: Fatura): Promise<void> {
+  const ls = await repositorio.lancamentos.porFatura(f.cartaoId, f.faturaRef);
+  await repositorio.lancamentos.excluirVarios(ls.filter((l) => l.tipo === 'transferencia').map((l) => l.id));
+}
+
+/** Valor da fatura que já estava aberta quando o cartão foi cadastrado (0 se não houver). */
+export async function faturaAnterior(cartaoId: Id): Promise<Lancamento | undefined> {
+  return (await repositorio.lancamentos.listar()).find((l) => l.cartaoId === cartaoId && l.saldoAnterior);
+}
+
+/** Grava (ou atualiza/apaga) a fatura que já estava aberta antes de usar o app. */
+export async function salvarFaturaAnterior(cartaoId: Id, valor: Centavos): Promise<void> {
+  const cartao = await repositorio.cartoes.obter(cartaoId);
+  if (!cartao) return;
+  const atual = await faturaAnterior(cartaoId);
+  if (valor <= 0) { if (atual) await repositorio.lancamentos.excluir(atual.id); return; }
+  const hoje = hojeISO();
+  const faturaRef = atual?.faturaRef ?? proximaFaturaAPagar(hoje, cartao);
+  const dados: Omit<Lancamento, 'id'> = {
+    tipo: 'saida', valor, data: atual?.data ?? hoje, descricao: 'Fatura que já estava aberta', cartaoId, faturaRef,
+    certeza: 'garantida', status: 'realizado', saldoAnterior: true,
+  };
+  if (atual) await repositorio.lancamentos.salvar({ ...dados, id: atual.id });
+  else await repositorio.lancamentos.criar(dados);
+}
+
+/** Quando vence a próxima fatura do cartão (para mostrar no cadastro). */
+export function vencimentoDaProxima(cartao: { diaFechamento: number; diaVencimento: number }): DataISO {
+  return vencimentoDaFatura(proximaFaturaAPagar(hojeISO(), cartao), cartao);
 }
 
 export interface OpcoesNovo {
   /** Compra no cartão em N vezes. */
   parcelas?: number;
   /** Repetir a partir da data do lançamento. vezes null = sem fim. */
-  repeticao?: { frequencia: Frequencia; vezes: number | null };
+  repeticao?: { frequencia: Frequencia; vezes: number | null; certezaProximas?: Certeza };
 }
 
 /**
@@ -79,8 +128,10 @@ export async function criarLancamento(dados: Omit<Lancamento, 'id'>, op: OpcoesN
   const cartao = dados.cartaoId ? await repositorio.cartoes.obter(dados.cartaoId) : undefined;
 
   if (op.repeticao) {
-    const { frequencia, vezes } = op.repeticao;
-    const { data, status: _s, recorrenciaId: _r, recorrenciaData: _d, parcela: _p, faturaRef: _f, ...modelo } = dados;
+    const { frequencia, vezes, certezaProximas } = op.repeticao;
+    const { data, status: _s, recorrenciaId: _r, recorrenciaData: _d, parcela: _p, faturaRef: _f, ...resto } = dados;
+    // Entrada repetida: as próximas vezes têm a certeza escolhida (comissão futura costuma ser provável).
+    const modelo = dados.tipo === 'entrada' && certezaProximas ? { ...resto, certeza: certezaProximas } : resto;
     const rec: Omit<Recorrencia, 'id'> = {
       modelo, frequencia, diaDoMes: Number(data.slice(8, 10)), dataInicio: data, ativa: true,
       ...(vezes ? { fim: dataDaOcorrencia(data, frequencia, vezes) } : {}),
@@ -89,7 +140,8 @@ export async function criarLancamento(dados: Omit<Lancamento, 'id'>, op: OpcoesN
     await garantirFixosDoMes(mesDe(data));
     if (mesDe(hojeISO()) !== mesDe(data)) await garantirFixosDoMes(mesDe(hojeISO()));
     const primeiro = (await repositorio.lancamentos.porRecorrencia(salvo.id)).find((l) => l.recorrenciaData === data);
-    if (primeiro && primeiro.status !== dados.status) await repositorio.lancamentos.atualizar(primeiro.id, { status: dados.status });
+    if (primeiro && (primeiro.status !== dados.status || primeiro.certeza !== dados.certeza))
+      await repositorio.lancamentos.atualizar(primeiro.id, { status: dados.status, certeza: dados.certeza });
     return async () => {
       const ls = await repositorio.lancamentos.porRecorrencia(salvo.id);
       await repositorio.lancamentos.excluirVarios(ls.map((l) => l.id));

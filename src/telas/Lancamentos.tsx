@@ -27,7 +27,7 @@ export function Lancamentos() {
   });
   const grupos = agruparPorDia(filtrados);
   const entrou = filtrados.filter((l) => l.tipo === 'entrada').reduce((s, l) => s + l.valor, 0);
-  const saiu = filtrados.filter((l) => l.tipo !== 'entrada').reduce((s, l) => s + l.valor, 0);
+  const saiu = filtrados.filter((l) => l.tipo === 'saida').reduce((s, l) => s + l.valor, 0);
   const cats = (cad?.categorias ?? []).filter((c) => tipo === 'todos' || c.tipo === tipo).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
 
   return (

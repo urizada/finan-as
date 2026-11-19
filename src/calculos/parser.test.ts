@@ -67,11 +67,12 @@ describe('lançamento rápido — outros jeitos de falar', () => {
   it('entrada cai na conta mesmo com nome igual ao do cartão', () => {
     expect(interpretar('recebi 500 nubank', ctx)).toMatchObject({ tipo: 'entrada', contaId: 'c-nu' });
   });
-  it('"comissão 3000" sem verbo é entrada com a certeza de costume da fonte', () => {
-    expect(interpretar('comissão 3000', ctx)).toMatchObject({ tipo: 'entrada', certeza: 'provavel', status: 'previsto' });
+  it('"comissão 3000" sem verbo: hoje é o que caiu; data futura usa a certeza da fonte', () => {
+    expect(interpretar('comissão 3000', ctx)).toMatchObject({ tipo: 'entrada', certeza: 'garantida', status: 'realizado' });
+    expect(interpretar('comissão 3000 dia 30', ctx)).toMatchObject({ tipo: 'entrada', certeza: 'provavel', status: 'previsto', data: '2026-11-30' });
   });
   it('repetições', () => {
-    expect(interpretar('recebi 500 comissão toda semana', ctx)).toMatchObject({ tipo: 'entrada', frequencia: 'semanal', vezes: null, descricao: 'Comissão' });
+    expect(interpretar('recebi 500 comissão toda semana', ctx)).toMatchObject({ tipo: 'entrada', frequencia: 'semanal', vezes: null, descricao: 'Comissão', certeza: 'garantida', certezaProximas: 'provavel' });
     expect(interpretar('academia 110 todo mês', ctx)).toMatchObject({ frequencia: 'mensal', descricao: 'Academia', categoriaId: 'Cuidados pessoais' });
     expect(interpretar('curso 200 todo mês 6 vezes', ctx)).toMatchObject({ frequencia: 'mensal', vezes: 6, descricao: 'Curso' });
     expect(interpretar('celular 1200 nubank em 10 vezes', ctx)).toMatchObject({ parcelas: 10, cartaoId: 'k-nu', descricao: 'Celular' });

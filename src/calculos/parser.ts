@@ -33,6 +33,8 @@ export interface Rascunho {
   frequencia?: Frequencia;
   /** Quantas vezes repete (com frequência). null = sem fim. */
   vezes?: number | null;
+  /** Entrada repetida: certeza das próximas vezes (comissão futura costuma ser provável). */
+  certezaProximas?: Certeza;
   /** Palavra que o app aprende se você trocar a categoria. */
   palavra?: string;
 }
@@ -155,8 +157,8 @@ export function interpretar(texto: string, ctx: ContextoParser): Rascunho {
   };
   if (tipo === null && !melhor(ctx.categorias.filter((c) => c.tipo === 'saida')) && melhor(ctx.categorias.filter((c) => c.tipo === 'entrada'))) tipo = 'entrada';
   const tipoFinal = tipo ?? 'saida';
-  // Sem verbo ("comissão 1200"): usa a certeza de costume da fonte.
-  if (tipoFinal === 'entrada' && fonte && certeza === 'garantida' && !jaCaiu) certeza = fonte.certezaPadrao;
+  // Sem verbo ("comissão 1200"): hoje ou antes é o que caiu; data futura usa a certeza de costume da fonte.
+  if (tipoFinal === 'entrada' && certeza === 'garantida' && !jaCaiu && data > ctx.hoje) certeza = fonte?.certezaPadrao ?? 'provavel';
 
   // 8. Onde: entrada vai para conta; saída procura cartão primeiro (nome do cartão no texto).
   let cartaoId: Id | undefined;
@@ -208,6 +210,7 @@ export function interpretar(texto: string, ctx: ContextoParser): Rascunho {
     fonteRendaId: tipoFinal === 'entrada' ? fonte?.id : undefined,
     frequencia,
     vezes: frequencia ? vezes ?? null : undefined,
+    certezaProximas: frequencia && tipoFinal === 'entrada' ? (fonte?.certezaPadrao ?? 'garantida') : undefined,
     palavra,
   };
 }

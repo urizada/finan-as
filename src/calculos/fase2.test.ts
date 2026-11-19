@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { dataDaRecorrencia, gerarPrevistosDoMes } from './recorrencias';
 import { efeitoNaConta, estadoDoSaldo, saldosDoMes } from './saldos';
+import { calcularFaturas, proximaFaturaAPagar, vencimentoDaFatura } from './cartao';
 import { agruparPorDia, filtrarLancamentos, statusSugerido, validarLancamento } from './lancamentos';
 import type { Conta, Lancamento, Recorrencia } from '../tipos';
 
@@ -71,7 +72,7 @@ describe('saldos do mês', () => {
       lanc('2026-11-21', 'saida', 30000, { cartaoId: 'k', contaId: undefined }),
       lanc('2026-11-25', 'entrada', 100000, { certeza: 'provavel', status: 'previsto' }),
     ];
-    const g = saldosDoMes('2026-11', [conta], ls);
+    const g = saldosDoMes('2026-11', [conta], ls).dias;
     expect(g).toHaveLength(30);
     expect(g[15].saldo).toBeNull();               // dia 16: antes de começar
     expect(g[16].saldo).toBe(80000);              // 17
@@ -88,24 +89,24 @@ describe('saldos do mês', () => {
 
   it('fica amarelo quando o saldo não cobre o que ainda vai sair', () => {
     const ls = [lanc('2026-11-28', 'saida', 90000, { recorrenciaId: 'r', status: 'previsto' })];
-    const g = saldosDoMes('2026-11', [conta], ls);
+    const g = saldosDoMes('2026-11', [conta], ls).dias;
     expect(g[17].estado).toBe('ok');              // 100.000 cobre 90.000
     const ls2 = [...ls, lanc('2026-11-18', 'saida', 20000)];
-    const g2 = saldosDoMes('2026-11', [conta], ls2);
+    const g2 = saldosDoMes('2026-11', [conta], ls2).dias;
     expect(g2[17].estado).toBe('apertado');       // 80.000 não cobre 90.000
     expect(g[28].estado).toBe('ok');              // depois do dia 28 nada mais sai: 10.000 basta
   });
 
   it('carrega o saldo dos meses anteriores', () => {
     const ls = [lanc('2026-11-20', 'saida', 30000), lanc('2026-12-05', 'entrada', 10000)];
-    const dez = saldosDoMes('2026-12', [conta], ls);
+    const dez = saldosDoMes('2026-12', [conta], ls).dias;
     expect(dez[0].saldo).toBe(70000);
     expect(dez[4].saldo).toBe(80000);
   });
 
   it('soma várias contas, cada uma com sua data de início', () => {
     const carteira: Conta = { id: 'c2', nome: 'Carteira', tipo: 'carteira', saldoInicial: 5000, dataSaldoInicial: '2026-11-20' };
-    const g = saldosDoMes('2026-11', [conta, carteira], [lanc('2026-11-19', 'saida', 1000, { contaId: 'c2' })]);
+    const g = saldosDoMes('2026-11', [conta, carteira], [lanc('2026-11-19', 'saida', 1000, { contaId: 'c2' })]).dias;
     expect(g[18].saldo).toBe(100000);             // gasto na carteira antes do início dela: ignorado
     expect(g[19].saldo).toBe(105000);
   });
@@ -162,5 +163,56 @@ describe('repetições semanais e quinzenais', () => {
     const mensal6 = { ...semanal, frequencia: 'mensal' as const, fim: dataDaOcorrencia('2026-11-06', 'mensal', 6) };
     expect(mensal6.fim).toBe('2027-04-06');
     expect(rotuloRepeticao(mensal6, '2027-01-06')).toBe('3 de 6');
+  });
+});
+
+describe('cartão no saldo projetado', () => {
+  const conta: Conta = { id: 'c1', nome: 'Nubank', tipo: 'corrente', saldoInicial: 300000, dataSaldoInicial: '2026-11-19' };
+  const nubank = { id: 'k', nome: 'Nubank', limite: 500000, diaFechamento: 3, diaVencimento: 10, contaPagamentoId: 'c1' };
+  const compra = (data: string, valor: number, extra: Partial<Lancamento> = {}) => lanc(data, 'saida', valor, { contaId: undefined, cartaoId: 'k', ...extra });
+
+  it('vencimento da fatura', () => {
+    expect(vencimentoDaFatura('2026-12', nubank)).toBe('2026-12-10');
+    expect(vencimentoDaFatura('2026-11', { diaFechamento: 25, diaVencimento: 5 })).toBe('2026-12-05');
+    expect(vencimentoDaFatura('2027-01', { diaFechamento: 28, diaVencimento: 31 })).toBe('2027-01-31');
+  });
+  it('próxima fatura a pagar', () => {
+    expect(proximaFaturaAPagar('2026-11-05', nubank)).toBe('2026-11');   // fechou dia 3, vence dia 10
+    expect(proximaFaturaAPagar('2026-11-19', nubank)).toBe('2026-12');   // a de novembro já venceu
+    expect(proximaFaturaAPagar('2026-11-02', nubank)).toBe('2026-11');
+  });
+  it('compra de hoje sai da conta no vencimento da fatura', () => {
+    const ls = [compra('2026-11-19', 30000)];
+    const nov = saldosDoMes('2026-11', [conta], ls, [nubank]).dias;
+    expect(nov[18].cartao).toBe(30000);
+    expect(nov[29].saldo).toBe(300000);                  // novembro não muda
+    const dez = saldosDoMes('2026-12', [conta], ls, [nubank]).dias;
+    expect(dez[8].saldo).toBe(300000);
+    expect(dez[9].faturas).toBe(30000);                  // 10/12
+    expect(dez[9].saidas).toBe(30000);
+    expect(dez[9].saldo).toBe(270000);
+  });
+  it('parcelado: cada parcela sai no vencimento da sua fatura', () => {
+    const ls = [1, 2, 3].map((n) => compra(n === 1 ? '2026-11-19' : n === 2 ? '2026-12-19' : '2027-01-19', 10000, { faturaRef: n === 1 ? '2026-12' : n === 2 ? '2027-01' : '2027-02', parcela: { numero: n, total: 3, grupoId: 'g' } }));
+    const fev = saldosDoMes('2027-02', [conta], ls, [nubank]).dias;
+    expect(fev[0].saldo).toBe(280000);                   // dez e jan já saíram
+    expect(fev[9].saldo).toBe(270000);                   // fevereiro sai a última
+  });
+  it('pagamento já feito reduz o que falta sair', () => {
+    const ls = [compra('2026-11-19', 30000), lanc('2026-11-25', 'transferencia', 10000, { cartaoId: 'k', faturaRef: '2026-12', descricao: 'Fatura' })];
+    const f = calcularFaturas(ls, [nubank]);
+    expect(f[0]).toMatchObject({ total: 30000, pago: 10000, restante: 20000, vencimento: '2026-12-10' });
+    expect(saldosDoMes('2026-11', [conta], ls, [nubank]).dias[24].saldo).toBe(290000);
+    expect(saldosDoMes('2026-12', [conta], ls, [nubank]).dias[9].saldo).toBe(270000);
+  });
+  it('fatura anterior ao app também vence', () => {
+    const ls = [compra('2026-11-19', 120000, { faturaRef: '2026-12', saldoAnterior: true })];
+    expect(saldosDoMes('2026-12', [conta], ls, [nubank]).dias[9].saldo).toBe(180000);
+  });
+  it('saldo com entradas prováveis aparece à parte', () => {
+    const ls = [lanc('2026-11-20', 'entrada', 50000, { certeza: 'provavel', status: 'previsto' }), lanc('2026-11-21', 'entrada', 10000)];
+    const d = saldosDoMes('2026-11', [conta], ls).dias;
+    expect(d[20].saldo).toBe(310000);
+    expect(d[20].saldoComIncertas).toBe(360000);
   });
 });
