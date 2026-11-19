@@ -1,7 +1,8 @@
 // Peças da Fase 2: formulário de lançamento, linha da lista e seletor de mês.
 import { useId, useState } from 'react';
 import { repositorio } from '../data/repositorio';
-import { criarLancamento, excluirLancamento, marcarComoPago, type Escopo } from '../data/servicos';
+import { criarLancamento, excluirLancamento, marcarComoPago, verificarLimite, type AvisoComCategoria, type Escopo } from '../data/servicos';
+import { AvisoLimite } from './AvisoLimite';
 import type { Cadastros } from '../data/useCadastros';
 import { formatarData, hojeISO, nomeDoMes, paraISO, somarMeses } from '../calculos/datas';
 import { faturaDaCompra, vencimentoDaFatura } from '../calculos/cartao';
@@ -193,6 +194,7 @@ function FormLancamentoEdicao({ item, cad, dataInicial, inicial, modo, aoFechar 
   const [vezes, setVezes] = useState<number | null>(inicial?.vezes ?? null);
   const [mais, setMais] = useState(false);
   const [erros, setErros] = useState<Erros>({});
+  const [avisoLimite, setAvisoLimite] = useState<AvisoComCategoria | null>(null);
 
   const entrada = tipo === 'entrada';
   const novo = !item;
@@ -216,7 +218,7 @@ function FormLancamentoEdicao({ item, cad, dataInicial, inicial, modo, aoFechar 
   const proximas: Certeza = certezaProximas ?? fonte?.certezaPadrao ?? 'garantida';
   const fatura1 = cartao ? (item?.faturaRef ?? faturaDaCompra(data, cartao.diaFechamento)) : undefined;
 
-  async function salvar() {
+  async function salvar(confirmouLimite = false) {
     const [qual, id] = ondeEscolhido.split(':');
     const dados: Omit<Lancamento, 'id'> = {
       ...(item ?? {}), tipo, valor, data, certeza: certezaFinal,
@@ -234,6 +236,14 @@ function FormLancamentoEdicao({ item, cad, dataInicial, inicial, modo, aoFechar 
     if (novo && repetirFinal !== 'nao' && vezes !== null && vezes < 2) e.vezes = 'Use 2 vezes ou mais, ou escolha "Sem fim".';
     setErros(e);
     if (!valido(e)) return;
+    if (tipo === 'saida' && !confirmouLimite) {
+      // 5.9: pergunta antes se o gasto deixa a categoria perto ou acima do limite do mês
+      const valorNoMes = parcelasFinal > 1 ? dividirCentavos(valor, parcelasFinal)[0] : valor;
+      const aviso = await verificarLimite(dados.categoriaId, data, valorNoMes, item?.id);
+      if (aviso && (!item || aviso.depois > aviso.antes + (item.categoriaId === dados.categoriaId && item.data.slice(0, 7) === data.slice(0, 7) ? item.valor : 0))) {
+        setAvisoLimite(aviso); return;
+      }
+    }
     if (item) await repositorio.lancamentos.salvar({ ...dados, id: item.id });
     else await criarLancamento(dados, {
       parcelas: parcelasFinal,
@@ -368,7 +378,9 @@ function FormLancamentoEdicao({ item, cad, dataInicial, inicial, modo, aoFechar 
         <button type="button" onClick={() => setMais(true)} className="self-start text-sm font-bold text-destaque">+ Descrição e categoria</button>
       ))}
 
-      <Acoes aoSalvar={salvar} aoCancelar={aoFechar} />
+      {avisoLimite
+        ? <AvisoLimite aviso={avisoLimite} aoVoltar={() => setAvisoLimite(null)} aoContinuar={() => { setAvisoLimite(null); salvar(true); }} />
+        : <Acoes aoSalvar={() => salvar()} aoCancelar={aoFechar} />}
       {item && <ExcluirLancamento l={item} aoExcluido={aoFechar} />}
     </div>
   );

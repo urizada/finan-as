@@ -13,6 +13,7 @@ import { CampoEscolha, CampoTexto, CampoValor, Segmentos } from './ui';
 
 export function FormEconomia({ cad, aoFechar, dataInicial }: { cad: Cadastros; aoFechar: () => void; dataInicial?: string }) {
   const metas = useConsulta(async () => { await garantirReserva(); return repositorio.metas.listar(); }, []);
+  const investimentos = useConsulta(() => repositorio.investimentos.listar(), []) ?? [];
   const [valor, setValor] = useState(0);
   const [data, setData] = useState(dataInicial ?? hojeISO());
   const [contaId, setContaId] = useState(cad.contaPadraoId ?? cad.contas[0]?.id ?? '');
@@ -31,12 +32,14 @@ export function FormEconomia({ cad, aoFechar, dataInicial }: { cad: Cadastros; a
     if (repetir !== 'nao' && vezes !== null && vezes < 2) e.vezes = 'Use 2 vezes ou mais, ou escolha "Sem fim".';
     setErros(e);
     if (!valido(e)) return;
-    const meta = metaEscolhida === 'nova'
-      ? await repositorio.metas.criar({ nome: novaMeta.trim(), tipo: 'meta', valorAlvo: 0, saldoAtual: 0 })
+    const inv = investimentos.find((i) => `inv:${i.id}` === metaEscolhida);
+    const meta = inv ? null : metaEscolhida === 'nova'
+      ? await repositorio.metas.criar({ nome: novaMeta.trim(), tipo: 'meta', valorAlvo: 0, saldoAtual: 0, criadaEm: hojeISO() })
       : metas!.find((m) => m.id === metaEscolhida)!;
+    const destino = inv ? { tipo: 'investimento' as const, id: inv.id, nome: inv.nome } : { tipo: 'meta' as const, id: meta!.id, nome: meta!.nome };
     const dados: Omit<Lancamento, 'id'> = {
-      tipo: 'transferencia', valor, data, descricao: `Guardado: ${meta.nome}`, contaId,
-      destino: { tipo: 'meta', id: meta.id }, certeza: 'garantida', status: data <= hojeISO() ? 'realizado' : 'previsto',
+      tipo: 'transferencia', valor, data, descricao: `Guardado: ${destino.nome}`, contaId,
+      destino: { tipo: destino.tipo, id: destino.id }, certeza: 'garantida', status: data <= hojeISO() ? 'realizado' : 'previsto',
     };
     await criarLancamento(dados, { repeticao: repetir !== 'nao' ? { frequencia: repetir, vezes } : undefined });
     aoFechar();
@@ -47,7 +50,7 @@ export function FormEconomia({ cad, aoFechar, dataInicial }: { cad: Cadastros; a
       <p className="rounded-2xl bg-saldo-ok px-4 py-3 text-sm">O valor sai da conta e vai para a reserva ou a meta. Aparece nas saídas do dia.</p>
       <CampoValor rotulo="Quanto vai guardar" valor={valor} aoMudar={setValor} erro={erros.valor} />
       <CampoEscolha rotulo="Guardar em" valor={metaEscolhida} aoMudar={setMetaId} erro={erros.meta}
-        opcoes={[...(metas ?? []).map((m) => ({ valor: m.id, rotulo: m.nome })), { valor: 'nova', rotulo: '+ Nova meta…' }]} />
+        opcoes={[...(metas ?? []).map((m) => ({ valor: m.id, rotulo: m.nome })), ...investimentos.map((i) => ({ valor: `inv:${i.id}`, rotulo: `Investimento: ${i.nome}` })), { valor: 'nova', rotulo: '+ Nova meta…' }]} />
       {metaEscolhida === 'nova' && <CampoTexto rotulo="Nome da meta" valor={novaMeta} aoMudar={setNovaMeta} placeholder="ex.: Viagem, Carro" />}
       <div className="flex flex-col gap-1.5">
         <label htmlFor="eco-data" className="text-sm font-bold text-texto-2">Data</label>

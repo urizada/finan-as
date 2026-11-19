@@ -110,7 +110,7 @@ export function livrePorDia(lancamentosDoMes: Lancamento[], hoje: DataISO, parti
         break;
       case 'fixo': fixos += l.valor; break;
       case 'parcela': parcelas += l.valor; break;
-      case 'aporte': aportes += l.valor; break;
+      case 'aporte': aportes += l.retirada ? -l.valor : l.valor; break;
       case 'variavel':
         if (l.data < hoje) variaveisAteOntem += l.valor;
         else if (l.data === hoje) variaveisHoje += l.valor;
@@ -186,7 +186,7 @@ export function totaisDoMes(lancamentosDoMes: Lancamento[], mes: MesRef, hoje: D
     if (t === 'entrada') { if (l.certeza === 'garantida') entradas += l.valor; else entradasIncertas += l.valor; }
     else if (t === 'fixo') fixos += l.valor;
     else if (t === 'parcela') parcelas += l.valor;
-    else if (t === 'aporte') guardado += l.valor;
+    else if (t === 'aporte') guardado += l.retirada ? -l.valor : l.valor;
     else if (t === 'variavel') variaveis += l.valor;
     if (l.tipo === 'saida' && l.cartaoId && !l.saldoAnterior) noCartao += l.valor;
   }

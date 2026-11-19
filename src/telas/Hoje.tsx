@@ -3,7 +3,9 @@ import { LancamentoRapido } from '../componentes/LancamentoRapido';
 import { FormLancamento, type InicialLancamento } from '../componentes/lancamentos';
 import { IconeSeta } from '../componentes/Icones';
 import { Folha } from '../componentes/ui';
-import { guardarNaReserva, marcarComoPago, pagarFatura, resumoDosCartoes, resumoHoje, type ItemChegando, type ResumoHoje } from '../data/servicos';
+import { guardarNaReserva, marcarComoPago, pagarFatura, patrimonio, resumoDosCartoes, resumoHoje, situacaoDeHoje, type ItemChegando, type ResumoHoje } from '../data/servicos';
+import { formatarMeses, type Situacao } from '../calculos/metas';
+import { BarraLimite } from './Limites';
 import { useCadastros, type Cadastros } from '../data/useCadastros';
 import { useConsulta } from '../data/useConsulta';
 import { formatarData, somarDias } from '../calculos/datas';
@@ -40,10 +42,14 @@ function Secao({ titulo, link, rotuloLink, children }: { titulo: string; link?: 
 export function Hoje() {
   const cad = useCadastros();
   const r = useConsulta(() => resumoHoje(), []);
+  const sit = useConsulta(async () => (r ? situacaoDeHoje(r) : undefined), [r]);
+  const p = useConsulta(() => patrimonio(), []);
+  const cartoes = useConsulta(() => resumoDosCartoes(), []);
   const [detalhes, setDetalhes] = useState<InicialLancamento | null>(null);
   const [editando, setEditando] = useState<Lancamento | null>(null);
   const [explicar, setExplicar] = useState(false);
   const fechar = useCallback(() => { setDetalhes(null); setEditando(null); setExplicar(false); }, []);
+  const proximaFatura = cartoes?.filter((c) => c.proxima.restante > 0).sort((a, b) => (a.proxima.vencimento < b.proxima.vencimento ? -1 : 1))[0];
 
   return (
     <main className="mx-auto max-w-md px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-28">
@@ -53,66 +59,45 @@ export function Hoje() {
       </header>
 
       <div className="flex flex-col gap-6">
-        {r && <CartaoLivre r={r} aoExplicar={() => setExplicar(true)} />}
-
-        {r?.alerta && (
-          <a href={linkPara('saldos')} className="flex items-start gap-3 rounded-2xl border border-saida/40 bg-saldo-negativo px-4 py-3">
-            <span aria-hidden="true" className="text-xl">⚠️</span>
-            <span className="min-w-0 flex-1">
-              <span className="block font-bold">Vai faltar {formatarReais(r.alerta.falta)} na conta</span>
-              <span className="block text-sm text-texto-2">a partir de {formatarData(r.alerta.dia)}, contando só o que é garantido. Toque para ver os dias.</span>
-            </span>
-          </a>
-        )}
+        {r && <CartaoLivre r={r} sit={sit} aoExplicar={() => setExplicar(true)} />}
 
         {cad && <LancamentoRapido cad={cad} aoDetalhes={setDetalhes} />}
 
         {r && cad && <Chegando r={r} cad={cad} aoEditar={setEditando} />}
 
-        {r && cad && (
-          <Secao titulo="Suas contas" link={linkPara('saldos')} rotuloLink="dia a dia">
-            <div className="overflow-hidden rounded-2xl border border-borda bg-superficie">
-              {cad.contas.map((c) => (
-                <div key={c.id} className="flex items-center justify-between border-b border-borda px-4 py-3 last:border-0">
-                  <span className="font-semibold">{c.nome}</span>
-                  <span className={`font-bold tabular-nums ${(r.saldoHoje.porConta[c.id] ?? 0) < 0 ? 'text-saida' : ''}`}>{formatarReais(r.saldoHoje.porConta[c.id] ?? 0)}</span>
-                </div>
-              ))}
-              <div className="flex items-center justify-between bg-superficie-2/60 px-4 py-3 text-sm">
-                <span className="text-texto-2">Previsto no fim do mês</span>
-                <span className={`font-bold tabular-nums ${r.fimDoMes < 0 ? 'text-saida' : ''}`}>{formatarReais(r.fimDoMes)}</span>
-              </div>
-              <a href={linkPara('horizonte')} className="flex items-center justify-between border-t border-borda px-4 py-3 text-sm font-bold text-destaque">
+        {sit && sit.limitesAtencao.length > 0 && (
+          <Secao titulo="Limites" link={linkPara('limites')}>
+            <div className="flex flex-col gap-3 rounded-2xl border border-borda bg-superficie px-4 py-3.5">
+              {sit.limitesAtencao.slice(0, 3).map((l) => <BarraLimite key={l.categoria.id} l={l} />)}
+            </div>
+          </Secao>
+        )}
+
+        {r && (
+          <Secao titulo="Visão geral">
+            <div className="divide-y divide-borda overflow-hidden rounded-2xl border border-borda bg-superficie">
+              <Linha href={linkPara('saldos')} rotulo="Na conta hoje" valor={r.saldoHoje.total}
+                sub={cad && cad.contas.length > 1 ? cad.contas.map((c) => `${c.nome} ${formatarReais(r.saldoHoje.porConta[c.id] ?? 0)}`).join(' · ') : undefined} />
+              <Linha href={linkPara('saldos')} rotulo="Previsto no fim do mês" valor={r.fimDoMes} />
+              <Linha href={linkPara('saldos')} rotulo="Falta pagar este mês" valor={r.faltaPagar} cor={r.faltaPagar > 0 ? 'text-alerta' : ''} />
+              {proximaFatura && (
+                <Linha href={linkPara('cartoes')} rotulo={`Fatura ${proximaFatura.cartao.nome}`} valor={proximaFatura.proxima.restante}
+                  sub={`vence ${formatarData(proximaFatura.proxima.vencimento).slice(0, 5)}`} />
+              )}
+              {p && (
+                <Linha href={linkPara('metas')} rotulo="Reserva" texto={p.reserva.meses !== null ? `${formatarMeses(p.reserva.meses)} de ${p.reserva.mesesAlvo} meses` : formatarReais(p.reserva.saldo)}
+                  sub={p.reserva.folego !== null ? `aguenta ${formatarMeses(p.reserva.folego)} meses sem entrar nada` : undefined} />
+              )}
+              <a href={linkPara('horizonte')} className="flex items-center justify-between px-4 py-3 text-sm font-bold text-destaque">
                 Ver os próximos 12 meses <IconeSeta className="h-4 w-4" />
               </a>
             </div>
-          </Secao>
-        )}
-
-        {r && (
-          <Secao titulo="Este mês" link={linkPara('totais')} rotuloLink="totais">
-            <div className="grid grid-cols-3 gap-2">
-              <Numero rotulo="Entrou" valor={r.totais.entradas} cor="text-entrada" />
-              <Numero rotulo="Gastou" valor={r.totais.custoDeVida} />
-              <Numero rotulo="Falta pagar" valor={r.faltaPagar} cor={r.faltaPagar > 0 ? 'text-alerta' : ''} />
-            </div>
-          </Secao>
-        )}
-
-        {cad && cad.cartoes.length > 0 && <Faturas />}
-
-        {r && (
-          <Secao titulo="Reserva" link={linkPara('metas')}>
-            <div className="rounded-2xl border border-borda bg-superficie px-4 py-3">
-              <p className="text-2xl font-extrabold tabular-nums">{formatarReais(r.reserva)}</p>
-              <p className="text-sm text-texto-2">guardados. Meses de reserva e fôlego chegam na Fase 6.</p>
-              {r.sobraParaGuardar > 0 && (
-                <button type="button" onClick={() => guardarNaReserva(r.sobraParaGuardar)}
-                  className="mt-3 w-full rounded-2xl bg-saldo-ok py-3 font-bold text-entrada">
-                  Sobrou {formatarReais(r.sobraParaGuardar)} do mês passado · guardar na reserva
-                </button>
-              )}
-            </div>
+            {r.sobraParaGuardar > 0 && (
+              <button type="button" onClick={() => guardarNaReserva(r.sobraParaGuardar)}
+                className="w-full rounded-2xl bg-saldo-ok py-3 font-bold text-entrada">
+                Sobrou {formatarReais(r.sobraParaGuardar)} do mês passado · guardar na reserva
+              </button>
+            )}
           </Secao>
         )}
       </div>
@@ -127,23 +112,48 @@ export function Hoje() {
   );
 }
 
-function CartaoLivre({ r, aoExplicar }: { r: ResumoHoje; aoExplicar: () => void }) {
+function Linha({ href, rotulo, valor, texto, sub, cor = '' }: { href: string; rotulo: string; valor?: number; texto?: string; sub?: string; cor?: string }) {
+  return (
+    <a href={href} className="flex items-center gap-3 px-4 py-3">
+      <span className="min-w-0 flex-1">
+        <span className="block font-semibold">{rotulo}</span>
+        {sub && <span className="block truncate text-xs text-texto-2">{sub}</span>}
+      </span>
+      <span className={`shrink-0 font-bold tabular-nums ${valor !== undefined && valor < 0 ? 'text-saida' : cor}`}>{texto ?? formatarReais(valor ?? 0)}</span>
+      <IconeSeta className="h-4 w-4 shrink-0 text-texto-2" />
+    </a>
+  );
+}
+
+const SITUACAO: Record<Situacao, { rotulo: string; fundo: string; chip: string; icone: string }> = {
+  tranquilo: { rotulo: 'Tranquilo', fundo: 'bg-saldo-ok', chip: 'bg-entrada text-white', icone: '●' },
+  atencao: { rotulo: 'Atenção', fundo: 'bg-saldo-apertado', chip: 'bg-alerta text-white', icone: '▲' },
+  aperto: { rotulo: 'Aperto', fundo: 'bg-saldo-negativo', chip: 'bg-saida text-white', icone: '■' },
+};
+
+function CartaoLivre({ r, sit, aoExplicar }: { r: ResumoHoje; sit?: { situacao: Situacao; motivo: string }; aoExplicar: () => void }) {
   const l = r.livre;
   const negativo = l.livreHoje < 0;
+  const s = SITUACAO[sit?.situacao ?? (negativo ? 'aperto' : 'tranquilo')];
   return (
-    <section className={`rounded-3xl px-5 pt-5 pb-4 ${negativo ? 'bg-saldo-negativo' : 'bg-saldo-ok'}`}>
-      <p className="text-sm font-bold text-texto-2">Livre para gastar hoje</p>
-      <p className={`mt-1 text-5xl font-extrabold tracking-tight tabular-nums ${negativo ? 'text-saida' : 'text-texto'}`}>{formatarReais(l.livreHoje)}</p>
+    <section className={`rounded-3xl px-5 pt-4 pb-4 ${s.fundo}`}>
+      <div className="flex items-center gap-2">
+        <span className={`rounded-full px-2.5 py-1 text-xs font-extrabold uppercase tracking-wide ${s.chip}`}><span aria-hidden="true">{s.icone} </span>{s.rotulo}</span>
+        {sit && <span className="min-w-0 text-sm font-semibold">{sit.motivo}</span>}
+      </div>
+      <p className="mt-4 text-sm font-bold text-texto-2">Livre para gastar hoje</p>
+      <p className={`mt-0.5 text-5xl font-extrabold tracking-tight tabular-nums ${negativo ? 'text-saida' : 'text-texto'}`}>{formatarReais(l.livreHoje)}</p>
       {negativo ? (
         <p className="mt-2 font-semibold text-saida">Faltam {formatarReais(l.faltaEntrada)} de entrada para fechar o mês.</p>
       ) : (
         <p className="mt-2 text-base">
           Ainda posso hoje: <b className={`tabular-nums ${l.aindaPossoHoje < 0 ? 'text-saida' : ''}`}>{formatarReais(l.aindaPossoHoje)}</b>
-          {l.variaveisHoje > 0 && <span className="text-sm text-texto-2"> (já gastei {formatarReais(l.variaveisHoje)})</span>}
         </p>
       )}
-      {l.livreComProvaveis !== l.livreHoje && (
-        <p className="mt-1 text-sm text-texto-2">Se as prováveis caírem: {formatarReais(l.livreComProvaveis)} por dia.</p>
+      {r.alerta && (
+        <a href={linkPara('saldos')} className="mt-3 block rounded-2xl bg-fundo/60 px-3 py-2 text-sm">
+          Vai faltar <b className="text-saida">{formatarReais(r.alerta.falta)}</b> na conta a partir de {formatarData(r.alerta.dia).slice(0, 5)}. <b className="text-destaque">Ver dias ›</b>
+        </a>
       )}
       <button type="button" onClick={aoExplicar} className="mt-3 text-sm font-bold text-destaque">Como é calculado ›</button>
     </section>
@@ -179,14 +189,6 @@ function Explicacao({ r }: { r: ResumoHoje }) {
   );
 }
 
-function Numero({ rotulo, valor, cor = '' }: { rotulo: string; valor: number; cor?: string }) {
-  return (
-    <div className="rounded-2xl border border-borda bg-superficie px-3 py-2.5">
-      <p className="text-xs font-bold text-texto-2">{rotulo}</p>
-      <p className={`text-base font-extrabold tabular-nums ${cor}`}>{formatarReais(valor)}</p>
-    </div>
-  );
-}
 
 function Chegando({ r, cad, aoEditar }: { r: ResumoHoje; cad: Cadastros; aoEditar: (l: Lancamento) => void }) {
   const itens = r.chegando;
@@ -231,26 +233,3 @@ function LinhaChegando({ it, hoje, cad, aoEditar }: { it: ItemChegando; hoje: st
   );
 }
 
-function Faturas() {
-  const cartoes = useConsulta(() => resumoDosCartoes(), []);
-  if (!cartoes?.length) return null;
-  return (
-    <Secao titulo="Cartões" link={linkPara('cartoes')}>
-      <div className="overflow-hidden rounded-2xl border border-borda bg-superficie">
-        {cartoes.map((c) => (
-          <a key={c.cartao.id} href={linkPara('cartoes')} className="flex items-center gap-3 border-b border-borda px-4 py-3 last:border-0">
-            <span aria-hidden="true" className="text-lg">💳</span>
-            <span className="min-w-0 flex-1">
-              <span className="block font-bold">{c.cartao.nome}</span>
-              <span className="block text-sm text-texto-2">
-                {c.proxima.restante > 0 ? `fatura vence ${formatarData(c.proxima.vencimento).slice(0, 5)}` : c.proxima.total > 0 ? 'fatura paga' : 'sem fatura em aberto'}
-              </span>
-            </span>
-            <span className="font-bold tabular-nums">{formatarReais(c.proxima.total)}</span>
-            <IconeSeta className="h-4 w-4 text-texto-2" />
-          </a>
-        ))}
-      </div>
-    </Secao>
-  );
-}

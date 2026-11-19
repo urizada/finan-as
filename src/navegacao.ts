@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react';
 
 export type Rota =
   | 'hoje' | 'saldos' | 'totais' | 'mais'
-  | 'horizonte' | 'lancamentos' | 'previsao' | 'para-onde-foi' | 'cartoes' | 'metas' | 'investimentos' | 'configuracoes';
+  | 'horizonte' | 'limites' | 'lancamentos' | 'previsao' | 'para-onde-foi' | 'cartoes' | 'metas' | 'investimentos' | 'configuracoes';
 
 const ROTAS: Rota[] = [
   'hoje', 'saldos', 'totais', 'mais',
-  'horizonte', 'lancamentos', 'previsao', 'para-onde-foi', 'cartoes', 'metas', 'investimentos', 'configuracoes',
+  'horizonte', 'limites', 'lancamentos', 'previsao', 'para-onde-foi', 'cartoes', 'metas', 'investimentos', 'configuracoes',
 ];
 
 function lerRota(): Rota {

@@ -1,7 +1,8 @@
 // Campo único: você digita como fala ("uber 18,50 nubank") e confere a pré-visualização antes de lançar.
 import { useMemo, useState, type ReactNode } from 'react';
 import type { Cadastros } from '../data/useCadastros';
-import { criarLancamento, ensinarCategoria } from '../data/servicos';
+import { criarLancamento, ensinarCategoria, verificarLimite, type AvisoComCategoria } from '../data/servicos';
+import { AvisoLimite } from './AvisoLimite';
 import { formatarData, hojeISO, somarDias } from '../calculos/datas';
 import { dividirCentavos, formatarReais } from '../calculos/dinheiro';
 import { statusSugerido } from '../calculos/lancamentos';
@@ -34,6 +35,7 @@ export function LancamentoRapido({ cad, aoDetalhes, autoFocus }: {
   const [aberto, setAberto] = useState<Seletor>(null);
   const [feito, setFeito] = useState<{ texto: string; desfazer: () => Promise<void> } | null>(null);
   const [erro, setErro] = useState('');
+  const [avisoLimite, setAvisoLimite] = useState<AvisoComCategoria | null>(null);
   const hoje = hojeISO();
 
   const lido = useMemo(() => (texto.trim() ? interpretar(texto, {
@@ -42,7 +44,7 @@ export function LancamentoRapido({ cad, aoDetalhes, autoFocus }: {
   const r = lido ? { ...lido, ...ajuste } : null;
 
   function mudarTexto(t: string) {
-    setTexto(t); setAjuste({}); setAberto(null); setErro(''); if (t) setFeito(null);
+    setTexto(t); setAjuste({}); setAberto(null); setErro(''); setAvisoLimite(null); if (t) setFeito(null);
   }
   const ajustar = (a: Partial<Rascunho>) => { setAjuste((x) => ({ ...x, ...a })); setAberto(null); };
   const alternar = (s: Seletor) => setAberto((x) => (x === s ? null : s));
@@ -58,10 +60,16 @@ export function LancamentoRapido({ cad, aoDetalhes, autoFocus }: {
     return d;
   }
 
-  async function lancar() {
+  async function lancar(confirmouLimite = false) {
     if (!r) return;
     if (!r.valor) { setErro('Falta o valor. Ex.: almoço 32'); return; }
     if (!r.contaId && !r.cartaoId) { setErro('Cadastre uma conta em Configurações antes de lançar.'); return; }
+    if (r.tipo === 'saida' && !confirmouLimite) {
+      const parcelas = r.cartaoId ? r.parcelas : 1;
+      const aviso = await verificarLimite(r.categoriaId, r.data, parcelas > 1 ? dividirCentavos(r.valor, parcelas)[0] : r.valor);
+      if (aviso) { setAvisoLimite(aviso); return; }
+    }
+    setAvisoLimite(null);
     const dados = paraLancamento(r);
     const desfazer = await criarLancamento(dados, {
       parcelas: r.cartaoId ? r.parcelas : 1,
@@ -220,12 +228,16 @@ export function LancamentoRapido({ cad, aoDetalhes, autoFocus }: {
           )}
 
           {erro && <p className="text-sm font-semibold text-saida">{erro}</p>}
+          {avisoLimite ? (
+            <AvisoLimite aviso={avisoLimite} aoVoltar={() => setAvisoLimite(null)} aoContinuar={() => lancar(true)} />
+          ) : (
           <div className="flex gap-2">
             <button type="button" onClick={detalhes} className="flex-1 rounded-2xl bg-superficie-2 py-3 font-bold">Mais detalhes</button>
-            <button type="button" onClick={lancar} disabled={!r.valor} className="flex-[2] rounded-2xl bg-texto py-3 font-bold text-fundo disabled:opacity-40">
+            <button type="button" onClick={() => lancar()} disabled={!r.valor} className="flex-[2] rounded-2xl bg-texto py-3 font-bold text-fundo disabled:opacity-40">
               {r.tipo === 'entrada' ? 'Lançar entrada' : 'Lançar gasto'}
             </button>
           </div>
+          )}
         </div>
       )}
     </div>

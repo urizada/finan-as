@@ -6,8 +6,10 @@ import { calcularFaturas, faturaDaCompra, gerarParcelas, proximaFaturaAPagar, ve
 import { aprenderPalavra } from '../calculos/parser';
 import { alertaDeCaixa, dividirEntrada, livrePorDia, PERCENTUAIS_PADRAO, saldoDasContas, totaisDoMes, type AlertaCaixa, type Divisao, type LivrePorDia, type TotaisMes } from '../calculos/orcamento';
 import { avisarEntradaRecebida } from './eventos';
+import { avisoDeLimite, estadoDoLimite, gastoPorCategoria, type AvisoLimite, type EstadoLimite } from '../calculos/limites';
+import { aporteMensalNecessario, calcularReserva, saldoDaMeta, saldoDoInvestimento, situacaoGeral, statusDaMeta, type Reserva, type Situacao, type StatusMeta } from '../calculos/metas';
 import { corDoSaldo, saldosDoMes, type CorSaldo, type ResumoMes, type SaldoDia } from '../calculos/saldos';
-import type { Cartao, Centavos, Certeza, Conta, DataISO, Frequencia, Id, Lancamento, Meta, MesRef, Recorrencia } from '../tipos';
+import type { Cartao, Categoria, Centavos, Certeza, Conta, DataISO, Frequencia, Id, Investimento, Lancamento, Meta, MesRef, Recorrencia } from '../tipos';
 
 /** Primeiro dia em que você informou saldo (início do uso do app). */
 export async function dataDeInicio(): Promise<DataISO> {
@@ -217,7 +219,7 @@ export async function excluirLancamento(l: Lancamento, escopo: Escopo = 'este'):
 export async function garantirReserva(): Promise<Meta> {
   const metas = await repositorio.metas.listar();
   return metas.find((m) => m.tipo === 'reserva_emergencia')
-    ?? repositorio.metas.criar({ nome: 'Reserva de emergência', tipo: 'reserva_emergencia', valorAlvo: 0, saldoAtual: 0 });
+    ?? repositorio.metas.criar({ nome: 'Reserva de emergência', tipo: 'reserva_emergencia', valorAlvo: 0, saldoAtual: 0, criadaEm: hojeISO() });
 }
 
 // ---------- Cartões ----------
@@ -411,4 +413,104 @@ export async function horizonte(qtd = 12): Promise<{ meses: MesHorizonte[]; refe
     meses.push({ mes: m, dias: ds, fim: valores.length ? valores[valores.length - 1] : null, menor: valores.length ? Math.min(...valores) : null });
   }
   return { meses, referencia, hoje };
+}
+
+// ---------- Fase 6: limites ----------
+
+export interface AvisoComCategoria extends AvisoLimite { categoria: Categoria }
+
+/** Antes de salvar um gasto: avisa se a categoria fica perto (≥ 80%) ou acima do limite no mês da compra. */
+export async function verificarLimite(categoriaId: Id | undefined, data: DataISO, valorNoMes: Centavos, ignorarId?: Id): Promise<AvisoComCategoria | null> {
+  if (!categoriaId) return null;
+  const categoria = await repositorio.categorias.obter(categoriaId);
+  if (!categoria?.limiteMensal) return null;
+  const doMes = await repositorio.lancamentos.porMes(mesDe(data));
+  const aviso = avisoDeLimite(gastoPorCategoria(doMes, ignorarId)[categoriaId] ?? 0, valorNoMes, categoria.limiteMensal);
+  return aviso ? { ...aviso, categoria } : null;
+}
+
+export interface LinhaLimite { categoria: Categoria; gasto: Centavos; limite: Centavos; estado: EstadoLimite; pct: number; restante: Centavos }
+
+export async function limitesDoMes(mes: MesRef): Promise<{ comLimite: LinhaLimite[]; semLimite: { categoria: Categoria; gasto: Centavos }[] }> {
+  await garantirFixosDoMes(mes);
+  const [cats, doMes] = await Promise.all([repositorio.categorias.listar(), repositorio.lancamentos.porMes(mes)]);
+  const gastos = gastoPorCategoria(doMes);
+  const saidas = cats.filter((c) => c.tipo === 'saida');
+  const comLimite = saidas.filter((c) => c.limiteMensal).map((c) => {
+    const gasto = gastos[c.id] ?? 0;
+    return { categoria: c, gasto, limite: c.limiteMensal!, ...estadoDoLimite(gasto, c.limiteMensal!) };
+  }).sort((a, b) => b.pct - a.pct);
+  const semLimite = saidas.filter((c) => !c.limiteMensal).map((c) => ({ categoria: c, gasto: gastos[c.id] ?? 0 }))
+    .sort((a, b) => b.gasto - a.gasto || a.categoria.nome.localeCompare(b.categoria.nome, 'pt-BR'));
+  return { comLimite, semLimite };
+}
+
+// ---------- Fase 6: reserva, metas, investimentos ----------
+
+export interface LinhaMeta { meta: Meta; saldo: Centavos; pct: number; aporteMensal: Centavos | null; status: StatusMeta | null }
+export interface LinhaInvestimento { investimento: Investimento; saldo: Centavos; atualizadoEm: DataISO | null }
+
+export interface Patrimonio {
+  reserva: Reserva & { meta: Meta };
+  custoFixo: Centavos;
+  metas: LinhaMeta[];
+  investimentos: LinhaInvestimento[];
+  totalInvestido: Centavos;
+}
+
+export async function patrimonio(): Promise<Patrimonio> {
+  const hoje = hojeISO();
+  const reservaMeta = await garantirReserva();
+  const [{ lancamentos }, contas, cartoes, recs, config, metas, invs, snaps] = await Promise.all([
+    lancamentosAte(mesDe(hoje)), repositorio.contas.listar(), repositorio.cartoes.listar(), repositorio.recorrencias.listar(),
+    repositorio.obterConfig(), repositorio.metas.listar(), repositorio.investimentos.listar(), repositorio.snapshotsInvestimento.listar(),
+  ]);
+  const custoFixo = custoFixoMensal(recs);
+  const saldoContas = saldoDasContas(contas, lancamentos, cartoes, hoje, true).total;
+  const reserva = calcularReserva(saldoDaMeta(reservaMeta, lancamentos, hoje), saldoContas, custoFixo, config.mesesReservaAlvo);
+  const linhasMetas = metas.filter((m) => m.tipo === 'meta').map((meta) => {
+    const saldo = saldoDaMeta(meta, lancamentos, hoje);
+    return {
+      meta, saldo, pct: meta.valorAlvo > 0 ? Math.min(100, Math.round((saldo / meta.valorAlvo) * 100)) : 0,
+      aporteMensal: aporteMensalNecessario(meta.valorAlvo, saldo, hoje, meta.prazo),
+      status: statusDaMeta(meta.valorAlvo, saldo, hoje, meta.criadaEm, meta.prazo),
+    };
+  });
+  const investimentos = invs.map((investimento) => ({ investimento, ...saldoDoInvestimento(investimento, snaps, lancamentos, hoje) }));
+  return {
+    reserva: { ...reserva, meta: reservaMeta }, custoFixo, metas: linhasMetas, investimentos,
+    totalInvestido: investimentos.reduce((s, i) => s + i.saldo, 0),
+  };
+}
+
+/** Guardar (ou usar, com retirada) dinheiro numa meta ou investimento, hoje. */
+export async function movimentarDestino(destino: { tipo: 'meta' | 'investimento'; id: Id; nome: string }, valor: Centavos, retirada = false, contaId?: Id): Promise<void> {
+  if (valor <= 0) return;
+  const [config, contas] = await Promise.all([repositorio.obterConfig(), repositorio.contas.listar()]);
+  const conta = contaId ?? config.contaPadraoId ?? contas[0]?.id;
+  if (!conta) return;
+  await repositorio.lancamentos.criar({
+    tipo: 'transferencia', valor, data: hojeISO(), descricao: `${retirada ? 'Usado de' : 'Guardado'}: ${destino.nome}`, contaId: conta,
+    destino: { tipo: destino.tipo, id: destino.id }, certeza: 'garantida', status: 'realizado', ...(retirada ? { retirada: true } : {}),
+  });
+}
+
+/** Atualiza o saldo de um investimento hoje (substitui a atualização do mesmo dia). */
+export async function atualizarSaldoInvestimento(investimentoId: Id, saldo: Centavos): Promise<void> {
+  const hoje = hojeISO();
+  const doDia = (await repositorio.snapshotsInvestimento.listar()).find((s) => s.investimentoId === investimentoId && s.data === hoje);
+  if (doDia) await repositorio.snapshotsInvestimento.salvar({ ...doDia, saldo });
+  else await repositorio.snapshotsInvestimento.criar({ investimentoId, data: hoje, saldo });
+}
+
+export async function situacaoDeHoje(r: ResumoHoje): Promise<{ situacao: Situacao; motivo: string; limitesAtencao: LinhaLimite[] }> {
+  const { comLimite } = await limitesDoMes(mesDe(r.hoje));
+  const limitesAtencao = comLimite.filter((l) => l.estado !== 'ok');
+  return {
+    ...situacaoGeral({
+      livreHoje: r.livre.livreHoje, aindaPossoHoje: r.livre.aindaPossoHoje, saldoHoje: r.saldoHoje.total,
+      alertaDia: r.alerta?.dia ?? null, limitesEstourados: comLimite.filter((l) => l.estado === 'estourado').length,
+    }),
+    limitesAtencao,
+  };
 }

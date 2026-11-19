@@ -13,7 +13,10 @@ import { Mais } from './telas/Mais';
 import { Saldos } from './telas/Saldos';
 import { Horizonte } from './telas/Horizonte';
 import { Previsao, Totais } from './telas/Totais';
-import { Investimentos, Metas, ParaOndeFoi } from './telas/Secundarias';
+import { ParaOndeFoi } from './telas/Secundarias';
+import { Metas } from './telas/Metas';
+import { Investimentos } from './telas/Investimentos';
+import { Limites } from './telas/Limites';
 import { Cartoes } from './telas/Cartoes';
 import { Configuracoes } from './telas/Configuracoes';
 import { Onboarding } from './telas/Onboarding';
@@ -22,6 +25,7 @@ const TELAS: Record<Rota, () => React.JSX.Element> = {
   hoje: Hoje,
   saldos: Saldos,
   horizonte: Horizonte,
+  limites: Limites,
   totais: Totais,
   mais: Mais,
   lancamentos: Lancamentos,

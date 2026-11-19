@@ -120,3 +120,29 @@ describe('tela Hoje (serviço)', () => {
     expect(d.reserva).toBe(80000);
   });
 });
+
+import { movimentarDestino, patrimonio, verificarLimite } from './servicos';
+
+describe('fase 6 (serviço)', () => {
+  it('avisa limite ao lançar e ignora o próprio lançamento ao editar', async () => {
+    const hoje = hojeISO();
+    const conta = await repositorio.contas.criar({ nome: 'C', tipo: 'corrente', saldoInicial: 0, dataSaldoInicial: hoje });
+    const cat = await repositorio.categorias.criar({ nome: 'Mercado', tipo: 'saida', icone: '🛒', cor: '#000', palavrasChave: [], limiteMensal: 80000 });
+    const l = await repositorio.lancamentos.criar({ tipo: 'saida', valor: 70000, data: hoje, descricao: 'Mercado', categoriaId: cat.id, contaId: conta.id, certeza: 'garantida', status: 'realizado' });
+    expect(await verificarLimite(cat.id, hoje, 5000)).toMatchObject({ estado: 'perto', depois: 75000 });
+    expect(await verificarLimite(cat.id, hoje, 20000)).toMatchObject({ estado: 'estourado', acima: 10000 });
+    expect(await verificarLimite(cat.id, hoje, 70000, l.id)).toMatchObject({ estado: 'perto', depois: 70000 });
+    expect(await verificarLimite(cat.id, hoje, 1000, l.id)).toBeNull();
+  });
+  it('reserva em meses e fôlego', async () => {
+    const hoje = hojeISO();
+    const conta = await repositorio.contas.criar({ nome: 'C', tipo: 'corrente', saldoInicial: 600000, dataSaldoInicial: hoje });
+    await repositorio.salvarConfig({ contaPadraoId: conta.id, mesesReservaAlvo: 6 });
+    await repositorio.recorrencias.criar({ diaDoMes: 1, ativa: true, modelo: { tipo: 'saida', valor: 200000, descricao: 'Aluguel', contaId: conta.id } });
+    const p0 = await patrimonio();
+    await movimentarDestino({ tipo: 'meta', id: p0.reserva.meta.id, nome: 'Reserva' }, 300000);
+    const p = await patrimonio();
+    expect(p.custoFixo).toBe(200000);
+    expect(p.reserva).toMatchObject({ saldo: 300000, meses: 1.5, alvo: 1200000, folego: 3 });
+  });
+});

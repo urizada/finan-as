@@ -43,6 +43,8 @@ export interface Categoria {
   icone: string;
   cor: string;
   palavrasChave: string[];
+  /** Limite de gasto por mês (só categorias de saída). */
+  limiteMensal?: Centavos;
 }
 
 export interface FonteRenda {
@@ -82,6 +84,8 @@ export interface Lancamento {
   parcela?: Parcela;
   /** Fatura que já estava aberta antes de começar a usar o app (não é gasto do mês). */
   saldoAnterior?: boolean;
+  /** Transferência que tira da meta/investimento e volta para a conta. */
+  retirada?: boolean;
   destino?: { tipo: 'meta' | 'investimento'; id: Id };
 }
 
@@ -118,7 +122,9 @@ export interface Meta {
   tipo: 'reserva_emergencia' | 'meta';
   valorAlvo: Centavos;
   prazo?: DataISO;
+  /** Saldo que já existia antes do app. O atual = este + aportes − retiradas. */
   saldoAtual: Centavos;
+  criadaEm?: DataISO;
 }
 
 export type TipoInvestimento =

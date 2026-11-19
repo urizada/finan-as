@@ -8,13 +8,3 @@ export const ParaOndeFoi = () => (
     <EmConstrucao fase={7} itens={['Gastos por categoria (gráfico)', 'Fixo x variável', 'Comparação com meses anteriores']} />
   </Tela>
 );
-export const Metas = () => (
-  <Tela titulo="Reserva e metas" voltar={voltar}>
-    <EmConstrucao fase={6} itens={['Reserva em meses e fôlego', 'Progresso e aporte necessário', 'Botão “aportar”']} />
-  </Tela>
-);
-export const Investimentos = () => (
-  <Tela titulo="Investimentos" voltar={voltar}>
-    <EmConstrucao fase={6} itens={['Total da carteira', 'Distribuição por tipo', 'Atualizar saldo e ver evolução']} />
-  </Tela>
-);

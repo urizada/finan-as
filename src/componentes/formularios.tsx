@@ -333,15 +333,17 @@ export function FormCategoria({ item, aoFechar, tipoInicial = 'saida' }: PropsFo
   const [icone, setIcone] = useState(item?.icone ?? '📦');
   const [cor, setCor] = useState(item?.cor ?? CORES_CATEGORIA[0]);
   const [palavras, setPalavras] = useState(item?.palavrasChave.join(', ') ?? '');
+  const [limite, setLimite] = useState(item?.limiteMensal ?? 0);
   const [erros, setErros] = useState<Erros>({});
   const ehOutros = item && (item.nome === NOME_OUTROS_SAIDA || item.nome === NOME_OUTROS_ENTRADA);
 
   async function salvar() {
-    const dados = { nome: nome.trim(), tipo, icone: icone.trim() || '📦', cor, palavrasChave: separarPalavrasChave(palavras) };
+    const dados: Omit<Categoria, 'id'> = { nome: nome.trim(), tipo, icone: icone.trim() || '📦', cor, palavrasChave: separarPalavrasChave(palavras) };
+    if (tipo === 'saida' && limite > 0) dados.limiteMensal = limite;
     const e = validarCategoria({ ...dados, id: item?.id }, todas);
     setErros(e);
     if (!valido(e)) return;
-    if (item) await repositorio.categorias.salvar({ ...item, ...dados });
+    if (item) await repositorio.categorias.salvar({ ...item, ...dados, limiteMensal: dados.limiteMensal });
     else await repositorio.categorias.criar(dados);
     aoFechar();
   }
@@ -371,6 +373,10 @@ export function FormCategoria({ item, aoFechar, tipoInicial = 'saida' }: PropsFo
           ))}
         </div>
       </div>
+      {tipo === 'saida' && (
+        <CampoValor rotulo="Limite por mês (opcional)" valor={limite} aoMudar={setLimite}
+          ajuda="Avisa quando chegar perto (80%) ou passar, e pergunta se quer continuar. Deixe R$ 0,00 para não ter limite." />
+      )}
       <CampoTexto rotulo="Palavras-chave" valor={palavras} aoMudar={setPalavras}
         ajuda="Separe por vírgula. Ao digitar “uber 18” no lançamento rápido, o app usa essas palavras para achar a categoria." />
       <Acoes aoSalvar={salvar} aoCancelar={aoFechar}

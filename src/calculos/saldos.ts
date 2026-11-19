@@ -44,7 +44,7 @@ export function efeitoNaConta(l: Lancamento): Centavos {
   if (!l.contaId) return 0;
   if (l.tipo === 'entrada') return l.certeza === 'possivel' ? 0 : l.valor;
   if (l.tipo === 'saida') return l.cartaoId ? 0 : -l.valor;
-  return -l.valor;
+  return l.retirada ? l.valor : -l.valor;   // retirada da reserva volta para a conta
 }
 
 /** Amarelo quando o saldo não cobre o que ainda sai da conta até o fim do mês; vermelho quando negativo. */
@@ -135,7 +135,7 @@ export function saldosDoMes(mes: MesRef, contas: Conta[], lancamentos: Lancament
       } else if (l.tipo === 'transferencia' && l.cartaoId) {
         if (l.contaId) pagamentos += l.valor;                // pagamento de fatura
       } else if (l.tipo === 'transferencia' && l.destino) {
-        if (l.contaId) economia += l.valor;                  // guardado (avulso ou repetido)
+        if (l.contaId) economia += l.retirada ? -l.valor : l.valor; // guardado (ou retirado)
       } else if (l.contaId) {
         if (l.recorrenciaId) { fixos += l.valor; if (l.status === 'previsto') fixoPendente = true; }
         else diario += l.valor;                              // gasto do dia a dia na conta

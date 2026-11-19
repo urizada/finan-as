@@ -43,6 +43,7 @@ export function Saldos() {
   const pendente = useRef(consumirDiaPendente());
   const [mes, setMes] = useState(mesDe(pendente.current ?? hoje));
   const [filtro, setFiltro] = useState<Filtro>('todas');
+  const [vazias, setVazias] = useState(false);
   const [aberto, setAberto] = useState<Aberto>(null);
   const grade = useConsulta(() => gradeDoMes(mes), [mes]);
   const cad = useCadastros();
@@ -89,6 +90,12 @@ export function Saldos() {
             </select>
             <span aria-hidden="true" className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-texto-2">▾</span>
           </label>
+          {filtro === 'todas' && (
+            <button type="button" onClick={() => setVazias((v) => !v)} aria-pressed={vazias}
+              className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-bold ${vazias ? 'border-texto bg-texto text-fundo' : 'border-borda bg-superficie text-texto-2'}`}>
+              {vazias ? 'Todas as linhas' : 'Só com valor'}
+            </button>
+          )}
           <p className="text-right text-xs leading-tight text-texto-2">
             {diaHoje && diaHoje.saldo !== null && <>hoje <b className="text-texto">{formatarReais(diaHoje.saldo)}</b> · </>}
             fim do mês <b className={ultimo?.saldo !== undefined && ultimo.saldo !== null && ultimo.saldo < 0 ? 'text-saida' : 'text-texto'}>{ultimo?.saldo == null ? '—' : formatarReais(ultimo.saldo)}</b>
@@ -116,7 +123,16 @@ export function Saldos() {
               </div>
 
               <ul className="border-x border-borda bg-superficie">
-                {linhas.map((l) => {
+                {(() => {
+                  const visiveis = filtro !== 'todas' || vazias ? linhas
+                    : linhas.filter((l) => valorDaLinha(d, l.id) !== 0 || (l.id === 'cartao' && d.cartao > 0) || (l.id === 'entradas' && d.entradasIncertas > 0));
+                  if (visiveis.length === 0) return (
+                    <li>
+                      <button type="button" onClick={() => setAberto({ data: d.data, linha: 'todas', modo: 'lista' })}
+                        className="flex min-h-11 w-full items-center px-3 text-left text-xs text-texto-2/70 active:bg-superficie-2">Nada lançado</button>
+                    </li>
+                  );
+                  return visiveis.map((l) => {
                   const v = valorDaLinha(d, l.id);
                   const sub = l.id === 'cartao' && d.cartao > 0 ? `compras ${formatarReais(d.cartao)}` : l.id === 'entradas' && d.entradasIncertas > 0 ? `${formatarReais(d.entradasIncertas)} talvez` : null;
                   return (
@@ -137,7 +153,8 @@ export function Saldos() {
                       </button>
                     </li>
                   );
-                })}
+                  });
+                })()}
               </ul>
 
               <button type="button" onClick={() => setAberto({ data: d.data, linha: 'todas', modo: 'lista' })}

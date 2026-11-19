@@ -10,6 +10,8 @@ App de organização financeira pessoal, **mobile-first**, que responde três pe
 2. **Pra onde está indo meu dinheiro?**
 3. **Como vai estar minha situação daqui a 3, 6 e 12 meses?**
 
+**Público e tom:** o app é para quem **não tem muito controle financeiro**. Tudo precisa ser simples de entender: uma resposta clara por tela, poucas palavras técnicas, números grandes, cores que dizem a situação. Na dúvida entre mostrar mais ou mostrar menos, mostrar menos.
+
 A v1 é para um único usuário (eu), com renda **100% variável (comissão)**. Mas a arquitetura deve ser **genérica desde o início**, para depois servir qualquer tipo de renda (CLT, autônomo, sazonal, mista) e vários usuários sem reescrever.
 
 **Princípio central — renda com grau de certeza.** Toda entrada tem um nível:
@@ -68,6 +70,7 @@ Conta {                              // onde o dinheiro fica parado e disponíve
 Categoria {
   id; nome; tipo: 'entrada' | 'saida'; icone; cor;
   palavrasChave: string[];           // usadas pelo lançamento rápido
+  limiteMensal?: Centavos;           // limite de gasto por mês (só saída)
 }
 
 FonteRenda {
@@ -95,6 +98,7 @@ Lancamento {
   recorrenciaData?: string;          // data prevista da ocorrência (mesmo se o usuário mudar a data)
   parcela?: { numero: number; total: number; grupoId: string };
   saldoAnterior?: boolean;           // fatura que já estava aberta antes de usar o app
+  retirada?: boolean;                // transferência que tira da meta/investimento e volta para a conta
   destino?: { tipo: 'meta' | 'investimento'; id };  // para transferências/aportes
 }
 
@@ -118,7 +122,8 @@ Meta {                               // inclui a reserva de emergência
   tipo: 'reserva_emergencia' | 'meta';
   valorAlvo: Centavos;               // reserva: calculado = custoFixo × mesesReservaAlvo
   prazo?: string;
-  saldoAtual: Centavos;              // soma dos aportes
+  saldoAtual: Centavos;              // saldo antes do app; o atual = este + aportes − retiradas
+  criadaEm?: string;                 // para saber se está no ritmo
 }
 
 Investimento {                       // investimentos e caixinhas
@@ -178,9 +183,16 @@ status = 'no ritmo' | 'atrasada' | 'adiantada'   (compara saldo real vs saldo es
 ### 5.6 Ponto de equilíbrio
 ```
 necessarioNoMes = custoFixoMensal + aportes planejados
-se a fonte tiver taxaComissao: producaoNecessaria = necessarioNoMes ÷ taxaComissao
-   ex.: R$ 3.500 ÷ 0,035 = R$ 100.000 de produção
 ```
+(Decisão do usuário: **não** mostrar meta de vendas / produção necessária.)
+
+### 5.9 Limites por categoria
+```
+gastoNoMes(categoria) = saídas da categoria no mês, pela data da compra (conta + cartão)
+perto     = gasto ≥ 80% do limite
+estourado = gasto > limite
+```
+Ao lançar um gasto que deixa a categoria perto ou acima do limite, perguntar antes de salvar: "Você já gastou R$ X de R$ Y em Mercado. Com este gasto vai para R$ Z. Quer continuar?"
 
 ### 5.7 Divisão automática de entrada
 Ao lançar entrada garantida, sugerir divisão (o usuário confirma ou edita):
@@ -254,8 +266,8 @@ Cada fase termina com o app rodando e os testes passando.
 - **Fase 3 — Lançamento rápido e repetições:** parser da seção 6 + pré-visualização + aprendizado de palavras-chave. Testes com todos os exemplos da tabela. Opção **Repetir** no lançamento (semanal, quinzenal, mensal; sem fim ou N vezes) e **parcelas** em compras no cartão; a lista mostra "3 de 10" / "parcela 2/3".
 - **Fase 4 — Cartões:** cálculo de fatura, tela de cartões (fatura atual e futuras, limite, melhor dia), **informar fatura que já estava em aberto** antes de usar o app, **pagar fatura** (sai da conta corrente no vencimento).
 - **Fase 5 — Hoje, Totais e Livre por dia:** cálculos 5.1, 5.2 e 5.7 + tela Hoje completa (**visão geral**: contas chegando, situação das contas) + Totais do mês e economizado.
-- **Fase 6 — Reserva, metas e investimentos:** cálculos 5.4 e 5.5, snapshots, telas.
-- **Fase 7 — Análise e previsão:** "Para onde foi" + cálculos 5.6 e 5.8 + gráficos.
+- **Fase 6 — Limites, reserva, metas e investimentos:** limites por categoria (5.9) com aviso antes de salvar; cálculos 5.4 e 5.5; guardar/usar reserva; metas com prazo; investimentos com atualização de saldo; tela Hoje e Saldos mais simples.
+- **Fase 7 — Análise e previsão:** "Para onde foi" + cálculos 5.6 (sem produção) e 5.8 + gráficos.
 - **Fase 8 — Acabamento:** backup JSON, estados vazios, revisão visual mobile, deploy na Vercel e instruções para instalar no celular.
 
 ## 8.1 Decisões tomadas
@@ -282,6 +294,12 @@ Cada fase termina com o app rodando e os testes passando.
 - **Divisão de entrada (5.7):** ao lançar entrada garantida que já caiu, abre a sugestão: primeiro cobre o que falta dos fixos e faturas até o fim do mês (descontando o que já havia na conta), o resto pelos percentuais. Botão "Guardar R$ X" cria a economia na reserva (valor editável).
 - **Tela Hoje:** livre para gastar hoje + ainda posso hoje (e "se as prováveis caírem"), alerta de caixa, lançamento rápido, **Chegando** (fixos, entradas e faturas dos próximos 10 dias e atrasados, com Pagar/Caiu), **Suas contas** (saldo hoje por conta e previsto no fim do mês), este mês (entrou/gastou/falta pagar), cartões, reserva.
 - **Totais:** resultado do mês (entrou − gastou − guardou), entrou, custo de vida (fixos + dia a dia + parcelas, pela competência), economizado % e por mês no ano, gasto médio por dia (no primeiro mês, a partir do início do uso) vs livre hoje.
+- **Limites (5.9):** ficam na própria categoria (`limiteMensal`). Tela Mais › Limites por categoria (barra por categoria, "ainda pode gastar" / "passou R$ X"). Antes de salvar um gasto (formulário ou lançamento rápido) que deixa a categoria em ≥ 80% ou acima do limite no mês da compra, aparece o aviso com "Voltar" / "Continuar". Parcelado conta só a parcela do mês. Ao editar, só avisa de novo se o valor aumentou ou a categoria mudou.
+- **Reserva (5.4):** saldo = aportes − retiradas na meta "Reserva de emergência". Alvo = custo fixo mensal × meses desejados. Mostra "X de Y meses", quanto falta e o fôlego (contas garantidas + reserva ÷ custo fixo). Botões Guardar / Usar ("usar" é uma `transferencia` com `retirada: true`, que volta para a conta).
+- **Metas (5.5):** nome, valor, prazo opcional e quanto já tinha. Mostra progresso, "guarde R$ X por mês" e status (no ritmo / atrasada / adiantada / concluída, com folga de 5% do alvo).
+- **Investimentos:** saldo = última atualização manual + aportes − resgates depois dela. Total, divisão por tipo, atualizar saldo, aportar, resgatar. A Economia do botão + também guarda em investimento.
+- **Tela Hoje simplificada:** no topo, a situação **Tranquilo / Atenção / Aperto** com o motivo em uma frase (conta negativa, mês não fecha, alerta de caixa, passou do livre de hoje, categoria acima do limite) + livre para gastar hoje. Depois: lançamento rápido, Chegando, Limites (só os perto/acima) e um único cartão **Visão geral** (na conta hoje, previsto no fim do mês, falta pagar, próxima fatura, reserva em meses, próximos 12 meses).
+- **Saldos compacto:** por padrão mostra só as linhas com valor ("Só com valor"); o botão mostra todas as linhas.
 - **Referência visual:** o usuário enviou prints de um app de finanças que gosta (grade de saldos dia a dia, totais do mês, economizado). Serve de inspiração, não de cópia: a ideia é ser mais visual e mais simples.
 
 ## 9. Fora da v1 (já previsto na arquitetura)
