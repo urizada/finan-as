@@ -11,10 +11,11 @@ import type { DataISO, Lancamento } from '../tipos';
 
 const DIAS_SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
 const COLUNAS = [
+  { id: 'liquido', rotulo: 'Todos', cor: 'text-texto' },
   { id: 'entradas', rotulo: 'Entradas', cor: 'text-entrada' },
   { id: 'saidas', rotulo: 'Saídas', cor: 'text-saida' },
-  { id: 'cartao', rotulo: 'Cartão', cor: 'text-cartao' },
-  { id: 'fixos', rotulo: 'Fixos', cor: 'text-texto' },
+  { id: 'fixos', rotulo: 'Fixos', cor: 'text-alerta' },
+  { id: 'faturas', rotulo: 'Cartão', cor: 'text-cartao' },
 ] as const;
 type Coluna = (typeof COLUNAS)[number]['id'];
 
@@ -27,7 +28,7 @@ const curto = (c: number) => formatarReais(c).replace('R$ ', '').replace('R$', '
 export function Saldos() {
   const hoje = hojeISO();
   const [mes, setMes] = useState(mesDe(hoje));
-  const [coluna, setColuna] = useState<Coluna>('saidas');
+  const [coluna, setColuna] = useState<Coluna>('liquido');
   const [diaAberto, setDiaAberto] = useState<DataISO | null>(null);
   const [editando, setEditando] = useState<Lancamento | 'novo' | null>(null);
   const grade = useConsulta(() => gradeDoMes(mes), [mes]);
@@ -72,7 +73,7 @@ export function Saldos() {
         <div className="mt-3 flex gap-1.5" role="tablist" aria-label="Coluna exibida">
           {COLUNAS.map((c) => (
             <button key={c.id} type="button" role="tab" aria-selected={coluna === c.id} onClick={() => setColuna(c.id)}
-              className={`flex-1 rounded-full border px-2 py-1.5 text-sm font-bold ${coluna === c.id ? 'border-texto bg-texto text-fundo' : 'border-borda bg-superficie text-texto-2'}`}>
+              className={`min-w-0 flex-1 rounded-full border px-1 py-1.5 text-[13px] font-bold ${coluna === c.id ? 'border-texto bg-texto text-fundo' : 'border-borda bg-superficie text-texto-2'}`}>
               {c.rotulo}
             </button>
           ))}
@@ -101,10 +102,12 @@ export function Saldos() {
                     <span className="text-[15px] font-bold tabular-nums">{d.dia}</span>
                     <span className={`text-[10px] font-bold uppercase ${ehHoje ? '' : 'text-texto-2'}`}>{ehHoje ? 'hoje' : DIAS_SEMANA[semana]}</span>
                   </span>
-                  <span className={`flex items-center justify-end gap-1.5 px-3 tabular-nums ${v ? `font-bold ${col.cor}` : 'text-texto-2/40'}`}>
-                    {coluna === 'fixos' && d.fixoPendente && <span className="h-2 w-2 rounded-full bg-alerta" title="Fixo a pagar" />}
-                    {coluna === 'saidas' && d.faturas > 0 && <span className="rounded bg-cartao/15 px-1 text-[10px] font-bold text-cartao">fatura</span>}
-                    <span className={incerta ? 'underline decoration-dotted underline-offset-4' : ''}>{curto(v)}</span>
+                  <span className={`flex flex-col items-end justify-center px-3 leading-tight tabular-nums ${v ? `font-bold ${coluna === 'liquido' ? (v > 0 ? 'text-entrada' : 'text-saida') : col.cor}` : 'text-texto-2/40'}`}>
+                    <span className="flex items-center gap-1.5">
+                      {coluna === 'fixos' && d.fixoPendente && <span className="h-2 w-2 rounded-full bg-alerta" title="Fixo a pagar" />}
+                      <span className={incerta ? 'underline decoration-dotted underline-offset-4' : ''}>{coluna === 'liquido' && v > 0 ? '+' : ''}{coluna === 'liquido' && v < 0 ? '−' : ''}{curto(Math.abs(v))}</span>
+                    </span>
+                    {coluna === 'faturas' && d.cartao > 0 && <span className="text-[10px] font-semibold text-texto-2">compras {curto(d.cartao)}</span>}
                   </span>
                   <span className={`flex items-center justify-end px-3 font-bold tabular-nums ${d.estado ? `${FUNDO[d.estado]} ${TEXTO[d.estado]}` : 'text-texto-2/40'}`}>
                     {d.saldo === null ? '—' : curto(d.saldo)}
@@ -117,8 +120,8 @@ export function Saldos() {
       </div>
 
       <div className="mt-3 flex items-center justify-between px-1 text-sm">
-        <span className="text-texto-2">{col.rotulo} no mês</span>
-        <span className={`font-bold tabular-nums ${col.cor}`}>{formatarReais(totalColuna)}</span>
+        <span className="text-texto-2">{coluna === 'liquido' ? 'O saldo mudou no mês' : `${col.rotulo} no mês`}</span>
+        <span className={`font-bold tabular-nums ${coluna === 'liquido' ? (totalColuna >= 0 ? 'text-entrada' : 'text-saida') : col.cor}`}>{coluna === 'liquido' && totalColuna > 0 ? '+' : ''}{formatarReais(totalColuna)}</span>
       </div>
       <Legenda coluna={coluna} />
 
@@ -194,7 +197,9 @@ function Legenda({ coluna }: { coluna: Coluna }) {
       </div>
       <p>O saldo parte do que você tem na conta e soma as entradas certas e prováveis; desconta, em cada dia, os fixos, os gastos, as economias e as faturas dos cartões no vencimento. Entradas “talvez” ficam de fora.</p>
       {coluna === 'entradas' && <p>Valor sublinhado: inclui entrada “talvez”, que não está no saldo.</p>}
-      {coluna === 'cartao' && <p>Compras do dia no cartão. Elas saem da conta no vencimento da fatura (marcado como “fatura” em Saídas).</p>}
+      {coluna === 'liquido' && <p>Todos: quanto o saldo mudou no dia (entradas − saídas − fixos − cartão).</p>}
+      {coluna === 'saidas' && <p>Saídas: gastos na conta que não são fixos (inclui dinheiro guardado avulso).</p>}
+      {coluna === 'faturas' && <p>Cartão: faturas que saem da conta no dia do vencimento. Em letra pequena, as compras feitas no cartão naquele dia.</p>}
       {coluna === 'fixos' && <p className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-alerta" />fixo do dia ainda não marcado como pago.</p>}
     </div>
   );

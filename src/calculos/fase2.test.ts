@@ -196,8 +196,9 @@ describe('cartão no saldo projetado', () => {
     expect(nov[29].saldo).toBe(300000);                  // novembro não muda
     const dez = saldosDoMes('2026-12', [conta], ls, [nubank]).dias;
     expect(dez[8].saldo).toBe(300000);
-    expect(dez[9].faturas).toBe(30000);                  // 10/12
-    expect(dez[9].saidas).toBe(30000);
+    expect(dez[9].faturas).toBe(30000);                  // 10/12: aba Cartão
+    expect(dez[9].saidas).toBe(0);                       // não aparece em Saídas
+    expect(dez[9].liquido).toBe(-30000);
     expect(dez[9].saldo).toBe(270000);
   });
   it('parcelado: cada parcela sai no vencimento da sua fatura', () => {
@@ -236,5 +237,25 @@ describe('cartão no saldo projetado', () => {
     expect(dez).toMatchObject({ inicio: 600000, entradas: 1700000, saidas: 930000, faturas: 30000, talvez: 99999 });
     expect(dez.fim).toBe(dez.inicio + dez.entradas - dez.saidas);
     expect(saldosDoMes('2026-10', [conta], ls, [nubank]).resumo).toBeNull();
+  });
+});
+
+describe('abas separadas da grade', () => {
+  const conta: Conta = { id: 'c1', nome: 'N', tipo: 'corrente', saldoInicial: 100000, dataSaldoInicial: '2026-11-01' };
+  const k = { id: 'k', nome: 'K', limite: 1, diaFechamento: 3, diaVencimento: 10, contaPagamentoId: 'c1' };
+  it('cada coisa na sua aba e "Todos" = mudança do saldo no dia', () => {
+    const ls = [
+      lanc('2026-11-10', 'saida', 5000),                                                   // saída
+      lanc('2026-11-10', 'saida', 9000, { recorrenciaId: 'r', status: 'previsto' }),       // fixo
+      lanc('2026-11-10', 'entrada', 20000),                                                // entrada
+      lanc('2026-11-10', 'entrada', 7000, { certeza: 'possivel', status: 'previsto' }),     // talvez
+      lanc('2026-11-02', 'saida', 3000, { contaId: undefined, cartaoId: 'k' }),             // compra: fatura nov, vence 10/11
+      lanc('2026-11-10', 'saida', 4000, { contaId: undefined, cartaoId: 'k' }),             // compra do dia (informativo)
+      lanc('2026-11-12', 'transferencia', 2000, { destino: { tipo: 'meta', id: 'm' } }),    // economia avulsa
+    ];
+    const d = saldosDoMes('2026-11', [conta], ls, [k]).dias;
+    expect(d[9]).toMatchObject({ entradas: 27000, entradasIncertas: 7000, saidas: 5000, fixos: 9000, faturas: 3000, cartao: 4000, liquido: 3000 });
+    expect(d[11]).toMatchObject({ saidas: 2000, liquido: -2000 });
+    for (let i = 1; i < d.length; i++) expect(d[i].saldo! - d[i - 1].saldo!).toBe(d[i].liquido);
   });
 });

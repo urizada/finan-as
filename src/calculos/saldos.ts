@@ -12,14 +12,16 @@ export interface SaldoDia {
   entradas: Centavos;
   /** Parte das entradas marcada como "talvez" (não conta no saldo). */
   entradasIncertas: Centavos;
-  /** Tudo o que sai da conta no dia: gastos na conta, fixos e faturas que vencem. */
+  /** Gastos que saem da conta e não são fixos (inclui economia avulsa). */
   saidas: Centavos;
-  /** Compras feitas no cartão no dia (saem da conta só no vencimento da fatura). */
-  cartao: Centavos;
-  /** Faturas que vencem no dia (parte de `saidas`). */
-  faturas: Centavos;
-  /** Fixos do dia (conta ou cartão). */
+  /** Fixos que saem da conta no dia (repetições, inclusive economia mensal). */
   fixos: Centavos;
+  /** Cartão que sai da conta no dia: faturas que vencem + pagamentos de fatura feitos no dia. */
+  faturas: Centavos;
+  /** Compras feitas no cartão no dia (só informativo: saem da conta na fatura). */
+  cartao: Centavos;
+  /** Quanto o saldo mudou no dia = entradas que contam − saídas − fixos − faturas. */
+  liquido: Centavos;
   /** Há fixo do dia ainda não marcado como pago. */
   fixoPendente: boolean;
   /** Saldo somado das contas no fim do dia; null antes de você começar a usar o app. */
@@ -121,25 +123,28 @@ export function saldosDoMes(mes: MesRef, contas: Conta[], lancamentos: Lancament
       saldo += m.efeito; incertas += m.incerto;
       if (resumo) { const r: ResumoMes = resumo; if (m.efeito > 0) r.entradas += m.efeito; else r.saidas -= m.efeito; r.talvez += m.incerto; }
     }
-    let entradas = 0, entradasIncertas = 0, saidasConta = 0, cartao = 0, fixos = 0, fixoPendente = false;
+    let entradas = 0, entradasIncertas = 0, saidas = 0, cartao = 0, fixos = 0, pagamentos = 0, fixoPendente = false;
     for (const l of lancsDoDia.get(data) ?? []) {
       if (l.tipo === 'entrada') {
         entradas += l.valor;
         if (l.certeza === 'possivel') entradasIncertas += l.valor;
-      } else if (l.tipo === 'saida') {
-        if (l.cartaoId) cartao += l.valor;
-        else saidasConta += l.valor;
-        if (l.recorrenciaId) { fixos += l.valor; if (l.status === 'previsto') fixoPendente = true; }
+      } else if (l.tipo === 'saida' && l.cartaoId) {
+        cartao += l.valor;                                   // compra no cartão: só informativo
+      } else if (l.tipo === 'transferencia' && l.cartaoId) {
+        if (l.contaId) pagamentos += l.valor;                // pagamento de fatura
       } else if (l.contaId) {
-        saidasConta += l.valor; // pagamento de fatura, aporte
+        if (l.recorrenciaId) { fixos += l.valor; if (l.status === 'previsto') fixoPendente = true; }
+        else saidas += l.valor;                              // gasto na conta ou economia avulsa
       }
     }
-    const faturasHoje = faturasDoDia.get(data) ?? 0;
-    if (resumo) (resumo as ResumoMes).faturas += faturasHoje;
+    const faturasHoje = (faturasDoDia.get(data) ?? 0) + pagamentos;
+    const entradasQueContam = entradas - entradasIncertas;
+    if (resumo) (resumo as ResumoMes).faturas += faturasDoDia.get(data) ?? 0;
     aSairDepois -= saidaDoDia(data);
     const comecou = primeiroInicio !== null && data >= primeiroInicio;
     dias.push({
-      data, dia: i + 1, entradas, entradasIncertas, saidas: saidasConta + faturasHoje, cartao, faturas: faturasHoje, fixos, fixoPendente,
+      data, dia: i + 1, entradas, entradasIncertas, saidas, fixos, faturas: faturasHoje, cartao, fixoPendente,
+      liquido: entradasQueContam - saidas - fixos - faturasHoje,
       saldo: comecou ? saldo : null,
       saldoComIncertas: comecou ? saldo + incertas : null,
       estado: comecou ? estadoDoSaldo(saldo, aSairDepois) : null,
