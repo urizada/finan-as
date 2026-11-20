@@ -76,56 +76,96 @@ export function tipoNoOrcamento(l: Lancamento): 'entrada' | 'fixo' | 'parcela' |
 }
 
 export interface LivrePorDia {
-  /** Dinheiro de partida do mês (saldo da virada que pode ser usado). */
+  /** Dinheiro de partida do mês (o que já estava na conta e pode ser usado). */
   partida: Centavos;
-  entradasGarantidas: Centavos;
+  entradas: Centavos;
   fixos: Centavos;
   parcelas: Centavos;
-  aportes: Centavos;
+  /** Já guardado no mês (economias feitas). */
+  guardado: Centavos;
+  /** Quanto você quer guardar no mês. */
+  guardarMeta: Centavos;
+  /** O que ainda falta guardar para bater a meta. */
+  faltaGuardar: Centavos;
+  /** O máximo que dá para gastar no dia a dia: partida + entradas − fixos − parcelas − guardar. */
+  capacidade: Centavos;
+  /** Soma do que você planejou gastar no dia a dia (comida, transporte, lazer…). 0 = sem plano. */
+  planejado: Centavos;
+  /** Quanto o plano passa do que dá para gastar (0 se cabe). */
+  planoAcima: Centavos;
+  /** Orçamento do dia a dia no mês: o plano (se couber) ou a capacidade. */
+  orcamentoDiaADia: Centavos;
   variaveisAteOntem: Centavos;
   variaveisHoje: Centavos;
-  orcamentoLivreMes: Centavos;
   diasRestantes: number;
+  /** Média por dia se gastasse igual todos os dias do mês. */
+  mediaPorDia: Centavos;
+  /** Livre de hoje: o que sobra do orçamento ÷ dias que faltam (sobe se gastou menos, cai se gastou mais). */
   livreHoje: Centavos;
   aindaPossoHoje: Centavos;
+  /** livreHoje − média: positivo = sobrou dos dias anteriores; negativo = passou antes. */
+  diferenca: Centavos;
   /** Quando o mês não fecha: quanto falta de entrada. */
   faltaEntrada: Centavos;
-  /** Livre por dia se as entradas prováveis também caírem. */
-  livreComProvaveis: Centavos;
+  /** Se seguir o plano, quanto ainda sobra além do que vai guardar. */
+  sobraNoFim: Centavos;
+}
+
+export interface OpcoesLivre {
+  partida?: Centavos;
+  /** Meta de guardar no mês. */
+  guardarMeta?: Centavos;
+  /** Soma do plano do dia a dia. */
+  planejado?: Centavos;
+  /** Primeiro dia que conta (no mês em que começou a usar o app). */
+  inicio?: DataISO;
 }
 
 /**
- * 5.1 — quanto dá para gastar hoje sem comprometer o mês.
- * orcamentoLivreMes = partida + entradas GARANTIDAS − fixos − parcelas − aportes − variáveis até ontem.
- * `partida` é o dinheiro que já estava na conta no início do mês (ver servico); entra para que o
- * saldo que você já tem também possa ser gasto.
+ * Quanto dá para gastar hoje sem se apertar.
+ * capacidade = partida + entradas do mês − fixos − parcelas do mês − guardar (o maior entre a meta e o já guardado)
+ * orçamento do dia a dia = o plano (soma das categorias planejadas), limitado à capacidade; sem plano, a capacidade
+ * livre hoje = (orçamento − gastos do dia a dia até ontem) ÷ dias que faltam (contando hoje)
  */
-export function livrePorDia(lancamentosDoMes: Lancamento[], hoje: DataISO, partida: Centavos = 0): LivrePorDia {
-  let entradasGarantidas = 0, provaveis = 0, fixos = 0, parcelas = 0, aportes = 0, variaveisAteOntem = 0, variaveisHoje = 0;
+export function livrePorDia(lancamentosDoMes: Lancamento[], hoje: DataISO, op: OpcoesLivre = {}): LivrePorDia {
+  const partida = op.partida ?? 0;
+  const guardarMeta = Math.max(0, op.guardarMeta ?? 0);
+  const planejado = Math.max(0, op.planejado ?? 0);
+  let entradas = 0, fixos = 0, parcelas = 0, guardado = 0, variaveisAteOntem = 0, variaveisHoje = 0;
   for (const l of lancamentosDoMes) {
     switch (tipoNoOrcamento(l)) {
-      case 'entrada':
-        if (l.certeza === 'garantida') entradasGarantidas += l.valor;
-        else if (l.certeza === 'provavel') provaveis += l.valor;
-        break;
+      case 'entrada': entradas += l.valor; break;
       case 'fixo': fixos += l.valor; break;
       case 'parcela': parcelas += l.valor; break;
-      case 'aporte': aportes += l.retirada ? -l.valor : l.valor; break;
+      case 'aporte': guardado += l.retirada ? -l.valor : l.valor; break;
       case 'variavel':
         if (l.data < hoje) variaveisAteOntem += l.valor;
         else if (l.data === hoje) variaveisHoje += l.valor;
         break;
     }
   }
-  const orcamentoLivreMes = partida + entradasGarantidas - fixos - parcelas - aportes - variaveisAteOntem;
+  const guardar = Math.max(guardado, guardarMeta);
+  const capacidade = partida + entradas - fixos - parcelas - guardar;
   const diasRestantes = diasRestantesNoMes(hoje);
-  const livreHoje = Math.floor(orcamentoLivreMes / diasRestantes);
+  const mes = mesDe(hoje);
+  const primeiroDia = op.inicio && mesDe(op.inicio) === mes ? Number(op.inicio.slice(8, 10)) : 1;
+  const diasDoPeriodo = diasNoMes(mes) - primeiroDia + 1;
+  // No mês em que começou a usar o app, vale só a parte do plano dos dias que restam.
+  const planoDoPeriodo = Math.round((planejado * diasDoPeriodo) / diasNoMes(mes));
+  const orcamentoDiaADia = planejado > 0 ? Math.min(planoDoPeriodo, Math.max(0, capacidade)) : capacidade;
+  const livreHoje = Math.floor((orcamentoDiaADia - variaveisAteOntem) / diasRestantes);
+  const mediaPorDia = Math.floor(orcamentoDiaADia / diasDoPeriodo);
   return {
-    partida, entradasGarantidas, fixos, parcelas, aportes, variaveisAteOntem, variaveisHoje,
-    orcamentoLivreMes, diasRestantes, livreHoje,
+    partida, entradas, fixos, parcelas, guardado, guardarMeta,
+    faltaGuardar: Math.max(0, guardarMeta - guardado),
+    capacidade, planejado,
+    planoAcima: planejado > 0 ? Math.max(0, planoDoPeriodo - Math.max(0, capacidade)) : 0,
+    orcamentoDiaADia, variaveisAteOntem, variaveisHoje, diasRestantes, mediaPorDia,
+    livreHoje,
     aindaPossoHoje: livreHoje - variaveisHoje,
-    faltaEntrada: orcamentoLivreMes < 0 ? -orcamentoLivreMes : 0,
-    livreComProvaveis: Math.floor((orcamentoLivreMes + provaveis) / diasRestantes),
+    diferenca: livreHoje - mediaPorDia,
+    faltaEntrada: capacidade < 0 ? -capacidade : 0,
+    sobraNoFim: Math.max(0, capacidade - orcamentoDiaADia),
   };
 }
 

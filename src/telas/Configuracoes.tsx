@@ -49,7 +49,7 @@ export function Configuracoes() {
         </Secao>
 
         <Secao titulo="Divisão das entradas" descricao="Quando uma entrada cai, o app cobre primeiro os fixos do mês e sugere dividir o resto assim.">
-          <DivisaoConfig valor={config.divisaoEntrada ?? PERCENTUAIS_PADRAO} sugerir={config.sugerirDivisao ?? true} />
+          <DivisaoConfig valor={config.divisaoEntrada ?? PERCENTUAIS_PADRAO} sugerir={config.sugerirDivisao ?? false} />
         </Secao>
 
         <Secao titulo="Contas" descricao="Onde o dinheiro fica parado e disponível."><CadastroContas /></Secao>

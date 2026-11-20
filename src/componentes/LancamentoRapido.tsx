@@ -6,14 +6,14 @@ import { AvisoLimite } from './AvisoLimite';
 import { formatarData, hojeISO, somarDias } from '../calculos/datas';
 import { dividirCentavos, formatarReais } from '../calculos/dinheiro';
 import { statusSugerido } from '../calculos/lancamentos';
-import { NOME_OUTROS_ENTRADA, NOME_OUTROS_SAIDA, ROTULO_CERTEZA } from '../calculos/padroes';
+import { NOME_OUTROS_ENTRADA, NOME_OUTROS_SAIDA } from '../calculos/padroes';
 import { interpretar, type Rascunho } from '../calculos/parser';
 import { ROTULO_FREQUENCIA } from '../calculos/recorrencias';
 import { faturaDaCompra, vencimentoDaFatura } from '../calculos/cartao';
-import type { Certeza, Lancamento } from '../tipos';
+import type { Lancamento } from '../tipos';
 import type { InicialLancamento } from './lancamentos';
 
-type Seletor = 'categoria' | 'onde' | 'data' | 'parcelas' | 'certeza' | null;
+type Seletor = 'categoria' | 'onde' | 'data' | 'parcelas' | null;
 const EXEMPLOS = ['almoço 32', 'uber 18,50 nubank', 'recebi 1200 comissão', 'mercado 150 ontem'];
 
 function Chip({ children, ativo, alerta, aoTocar, rotulo }: { children: ReactNode; ativo?: boolean; alerta?: boolean; aoTocar: () => void; rotulo: string }) {
@@ -51,8 +51,8 @@ export function LancamentoRapido({ cad, aoDetalhes, autoFocus }: {
 
   function paraLancamento(x: Rascunho): Omit<Lancamento, 'id'> {
     const d: Omit<Lancamento, 'id'> = {
-      tipo: x.tipo, valor: x.valor ?? 0, data: x.data, descricao: x.descricao, certeza: x.certeza,
-      status: statusSugerido(x.data, hoje, x.certeza),
+      tipo: x.tipo, valor: x.valor ?? 0, data: x.data, descricao: x.descricao, certeza: 'garantida',
+      status: statusSugerido(x.data, hoje, 'garantida'),
     };
     if (x.categoriaId) d.categoriaId = x.categoriaId;
     if (x.cartaoId && x.tipo === 'saida') d.cartaoId = x.cartaoId; else if (x.contaId) d.contaId = x.contaId;
@@ -73,7 +73,7 @@ export function LancamentoRapido({ cad, aoDetalhes, autoFocus }: {
     const dados = paraLancamento(r);
     const desfazer = await criarLancamento(dados, {
       parcelas: r.cartaoId ? r.parcelas : 1,
-      repeticao: r.frequencia ? { frequencia: r.frequencia, vezes: r.vezes ?? null, certezaProximas: r.certezaProximas } : undefined,
+      repeticao: r.frequencia ? { frequencia: r.frequencia, vezes: r.vezes ?? null } : undefined,
     });
     // O app aprende: se você escolheu a categoria, a palavra passa a apontar para ela.
     if (ajuste.categoriaId && lido?.palavra && (ajuste.categoriaId !== lido.categoriaId || !lido.categoriaConfiante))
@@ -128,7 +128,7 @@ export function LancamentoRapido({ cad, aoDetalhes, autoFocus }: {
               <button type="button" onClick={() => {
                 const tipo = r.tipo === 'saida' ? 'entrada' : 'saida';
                 const outros = cad.categorias.find((c) => c.tipo === tipo && c.nome === (tipo === 'saida' ? NOME_OUTROS_SAIDA : NOME_OUTROS_ENTRADA));
-                ajustar({ tipo, categoriaId: outros?.id, categoriaConfiante: false, certeza: 'garantida' });
+                ajustar({ tipo, categoriaId: outros?.id, categoriaConfiante: false });
               }} className={`rounded-full px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide ${r.tipo === 'entrada' ? 'bg-saldo-ok text-entrada' : 'bg-superficie-2 text-texto-2'}`}
                 aria-label={`Tipo: ${r.tipo === 'entrada' ? 'entrada' : 'gasto'}. Toque para trocar`}>
                 {r.tipo === 'entrada' ? 'Entrada' : 'Gasto'} ⇄
@@ -153,11 +153,6 @@ export function LancamentoRapido({ cad, aoDetalhes, autoFocus }: {
                 {r.parcelas > 1 ? `${r.parcelas}× de ${formatarReais(dividirCentavos(r.valor ?? 0, r.parcelas)[0])}` : 'À vista'}
               </Chip>
             )}
-            {r.tipo === 'entrada' && (
-              <Chip rotulo="Certeza" ativo={aberto === 'certeza'} aoTocar={() => alternar('certeza')}>
-                {r.certeza === 'garantida' ? (r.data > hoje ? 'Certo' : 'Já caiu') : ROTULO_CERTEZA[r.certeza]}
-              </Chip>
-            )}
             {r.frequencia && (
               <span className="rounded-full bg-superficie-2 px-3 py-1.5 text-sm font-bold">
                 {ROTULO_FREQUENCIA[r.frequencia]}{r.vezes ? ` · ${r.vezes}×` : ''}
@@ -169,9 +164,6 @@ export function LancamentoRapido({ cad, aoDetalhes, autoFocus }: {
               {r.parcelas > 1 ? '1ª parcela na fatura' : 'Cai na fatura'} que vence em{' '}
               <b className="text-texto">{formatarData(vencimentoDaFatura(faturaDaCompra(r.data, cartao.diaFechamento), cartao))}</b>.
             </p>
-          )}
-          {r.tipo === 'entrada' && r.frequencia && r.certezaProximas && r.certezaProximas !== 'garantida' && (
-            <p className="-mt-1 text-sm text-texto-2">As próximas vezes entram como {ROTULO_CERTEZA[r.certezaProximas].toLowerCase()}s{r.certezaProximas === 'provavel' ? ' (contam no saldo previsto)' : ' (ficam fora do saldo)'}.</p>
           )}
           {pedirCategoria && aberto !== 'categoria' && (
             <p className="-mt-1 text-sm text-texto-2">Não reconheci a categoria. Toque nela para escolher; o app aprende para a próxima.</p>
@@ -214,15 +206,6 @@ export function LancamentoRapido({ cad, aoDetalhes, autoFocus }: {
               {Array.from({ length: 12 }, (_, k) => k + 1).map((n) => (
                 <button key={n} type="button" onClick={() => ajustar({ parcelas: n })}
                   className={`h-9 min-w-9 rounded-full px-2.5 text-sm font-bold ${n === r.parcelas ? 'bg-texto text-fundo' : 'bg-superficie-2'}`}>{n === 1 ? 'À vista' : `${n}x`}</button>
-              ))}
-            </div>
-          )}
-          {aberto === 'certeza' && (
-            <div className="flex gap-1.5">
-              {(['garantida', 'provavel', 'possivel'] as Certeza[]).map((c) => (
-                <button key={c} type="button" onClick={() => ajustar({ certeza: c })}
-                  className={`flex-1 rounded-full px-3 py-1.5 text-sm font-bold ${c === r.certeza ? 'bg-texto text-fundo' : 'bg-superficie-2'}`}>
-                  {c === 'garantida' ? (r.data > hoje ? 'Certo' : 'Já caiu') : c === 'provavel' ? 'Provável' : 'Talvez'}</button>
               ))}
             </div>
           )}

@@ -142,10 +142,6 @@ export function ExcluirLancamento({ l, aoExcluido }: { l: Lancamento; aoExcluido
   );
 }
 
-type Situacao = 'caiu' | 'vai';
-const CHANCES: { valor: Certeza; rotulo: string }[] = [
-  { valor: 'garantida', rotulo: 'Certo' }, { valor: 'provavel', rotulo: 'Provável' }, { valor: 'possivel', rotulo: 'Talvez' },
-];
 
 /** Modo vindo do botão +: trava o tipo e o meio de pagamento. */
 export type ModoLancamento = 'entrada' | 'saida' | 'cartao';
@@ -189,9 +185,6 @@ function FormLancamentoEdicao({ item, cad, dataInicial, inicial, modo, aoFechar 
   const [categoriaId, setCategoriaId] = useState(base?.categoriaId ?? '');
   const [onde, setOnde] = useState(base?.cartaoId ? `cartao:${base.cartaoId}` : base?.contaId ? `conta:${base.contaId}` : '');
   const [fonteId, setFonteId] = useState<string | null>(base?.fonteRendaId ?? null);
-  // Entrada: já caiu? se não, qual a chance?
-  const [situacao, setSituacao] = useState<Situacao | null>(base?.status ? (base.status === 'realizado' ? 'caiu' : 'vai') : null);
-  const [chance, setChance] = useState<Certeza>(base?.certeza && base.status === 'previsto' ? base.certeza : 'garantida');
   // Gasto: já foi pago?
   const [pago, setPago] = useState<boolean | null>(item && item.tipo !== 'entrada' ? item.status === 'realizado' : null);
   const [parcelas, setParcelas] = useState(inicial?.parcelas ?? 1);
@@ -212,15 +205,13 @@ function FormLancamentoEdicao({ item, cad, dataInicial, inicial, modo, aoFechar 
   const ondeValido = (o: string) => !!o && !(entrada && o.startsWith('cartao:')) && !(modo === 'cartao' && !o.startsWith('cartao:')) && !(modo === 'saida' && o.startsWith('cartao:'));
   const ondeEscolhido = ondeValido(onde) ? onde : ondePadrao;
   const cartao = !entrada && ondeEscolhido.startsWith('cartao:') ? cad.cartao(ondeEscolhido.slice(7)) : undefined;
-  const situacaoFinal: Situacao = situacao ?? (data > hoje ? 'vai' : 'caiu');
-  const certezaFinal: Certeza = entrada ? (situacaoFinal === 'caiu' ? 'garantida' : chance) : 'garantida';
-  const realizado = entrada ? situacaoFinal === 'caiu' : cartao ? data <= hoje : pago ?? data <= hoje;
+  // Entrada é simples: lançou, conta como recebida no dia (sem "provável"/"talvez").
+  const certezaFinal: Certeza = 'garantida';
+  const realizado = entrada || cartao ? data <= hoje : pago ?? data <= hoje;
   const rec = cad.recorrencia(item?.recorrenciaId);
   const parcela = item?.parcela;
   const parcelasFinal = cartao ? parcelas : 1;
   const repetirFinal: Repetir = parcelasFinal > 1 ? 'nao' : repetir;
-  const [certezaProximas, setCertezaProximas] = useState<Certeza | null>(null);
-  const proximas: Certeza = certezaProximas ?? fonte?.certezaPadrao ?? 'garantida';
   const fatura1 = cartao ? (item?.faturaRef ?? faturaDaCompra(data, cartao.diaFechamento)) : undefined;
 
   async function salvar(confirmouLimite = false) {
@@ -252,7 +243,7 @@ function FormLancamentoEdicao({ item, cad, dataInicial, inicial, modo, aoFechar 
     if (item) await repositorio.lancamentos.salvar({ ...dados, id: item.id });
     else await criarLancamento(dados, {
       parcelas: parcelasFinal,
-      repeticao: repetirFinal !== 'nao' ? { frequencia: repetirFinal, vezes, certezaProximas: entrada ? proximas : undefined } : undefined,
+      repeticao: repetirFinal !== 'nao' ? { frequencia: repetirFinal, vezes } : undefined,
     });
     aoFechar();
   }
@@ -306,20 +297,6 @@ function FormLancamentoEdicao({ item, cad, dataInicial, inicial, modo, aoFechar 
             </div>
           )}
           <CampoData valor={data} aoMudar={setData} erro={erros.data} />
-          <div className="flex flex-col gap-1.5">
-            <span className="text-sm font-bold text-texto-2">Já caiu na conta?</span>
-            <Segmentos valor={situacaoFinal} aoMudar={setSituacao}
-              opcoes={[{ valor: 'caiu', rotulo: 'Já caiu' }, { valor: 'vai', rotulo: 'Ainda vai cair' }]} />
-          </div>
-          {situacaoFinal === 'vai' && (
-            <div className="flex flex-col gap-1.5">
-              <span className="text-sm font-bold text-texto-2">É certo que cai?</span>
-              <Segmentos valor={chance} aoMudar={setChance} opcoes={CHANCES} />
-              <p className="text-xs text-texto-2">
-                {chance === 'possivel' ? 'Aparece na grade, mas fica fora do saldo previsto até você marcar que caiu.' : 'Entra no saldo previsto da conta no dia.'}
-              </p>
-            </div>
-          )}
           {cad.contas.length > 1 && <CampoEscolha rotulo="Caiu em" valor={ondeEscolhido} aoMudar={setOnde} erro={erros.contaId} opcoes={opcoesOnde} />}
         </>
       ) : (
@@ -363,13 +340,6 @@ function FormLancamentoEdicao({ item, cad, dataInicial, inicial, modo, aoFechar 
             opcoes={[{ valor: 'nao', rotulo: 'Não repete' }, ...(['semanal', 'quinzenal', 'mensal'] as Frequencia[]).map((f) => ({ valor: f, rotulo: ROTULO_FREQUENCIA[f] }))]}
             ajuda={repetir === 'nao' ? (entrada ? 'Para comissão semanal ou salário.' : 'Para assinatura ou conta que se repete.') : undefined} />
           {repetir !== 'nao' && <CampoVezes vezes={vezes} aoMudar={setVezes} inicio={data} frequencia={repetir} />}
-          {repetir !== 'nao' && entrada && (
-            <div className="flex flex-col gap-1.5">
-              <span className="text-sm font-bold text-texto-2">As próximas vezes são</span>
-              <Segmentos valor={proximas} aoMudar={setCertezaProximas} opcoes={CHANCES.map((c) => ({ ...c, rotulo: c.valor === 'garantida' ? 'Certas' : c.valor === 'provavel' ? 'Prováveis' : 'Talvez' }))} />
-              <p className="text-xs text-texto-2">Certas e prováveis entram no saldo previsto; “talvez” fica de fora. Quando cair de verdade, toque em “Caiu”.</p>
-            </div>
-          )}
           {erros.vezes && <p className="text-sm font-semibold text-saida">{erros.vezes}</p>}
         </div>
       )}

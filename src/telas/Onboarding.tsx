@@ -159,7 +159,7 @@ export function Onboarding() {
             className="rounded-2xl border border-borda bg-superficie px-4 py-3 text-base text-texto" />
         </div>
         {vComissao > 0 && vFreq !== 'mensal' && (
-          <p className="text-sm text-texto-2">Vai entrar como <b className="text-texto">{formatarReais(valorPorRecebimento(Math.round(vComissao), vFreq))}</b> {vFreq === 'semanal' ? 'por semana' : 'a cada 15 dias'}, como <b>provável</b>: aparece na previsão, mas o “livre para gastar hoje” só conta quando cair.</p>
+          <p className="text-sm text-texto-2">Vai entrar como <b className="text-texto">{formatarReais(valorPorRecebimento(Math.round(vComissao), vFreq))}</b> {vFreq === 'semanal' ? 'por semana' : 'a cada 15 dias'}. É só uma estimativa: quando receber de verdade, é só editar o valor.</p>
         )}
         <div className={`rounded-2xl px-4 py-4 ${nec.sobraNoMesFraco !== null && nec.sobraNoMesFraco < 0 ? 'bg-saldo-apertado' : 'bg-saldo-ok'}`}>
           <p className="text-sm font-bold text-texto-2">Para pagar seus fixos ({formatarReais(custoFixo)} por mês)</p>

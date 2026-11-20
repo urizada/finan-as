@@ -94,7 +94,7 @@ export function situacaoGeral(p: {
   if (p.saldoHoje < 0) return { situacao: 'aperto', motivo: 'Sua conta está no negativo.' };
   if (p.livreHoje < 0) return { situacao: 'aperto', motivo: 'O dinheiro garantido não fecha o mês.' };
   if (p.alertaDia) return { situacao: 'atencao', motivo: `A conta fica negativa em ${p.alertaDia.slice(8)}/${p.alertaDia.slice(5, 7)}.` };
-  if (p.aindaPossoHoje < 0) return { situacao: 'atencao', motivo: 'Você já passou do livre de hoje.' };
+  if (p.aindaPossoHoje < 0) return { situacao: 'atencao', motivo: 'Você passou do previsto para hoje.' };
   if (p.limitesEstourados > 0) return { situacao: 'atencao', motivo: p.limitesEstourados === 1 ? 'Uma categoria passou do limite.' : `${p.limitesEstourados} categorias passaram do limite.` };
   return { situacao: 'tranquilo', motivo: 'Seu mês está sob controle.' };
 }

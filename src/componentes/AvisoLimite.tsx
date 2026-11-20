@@ -8,12 +8,12 @@ export function AvisoLimite({ aviso, aoVoltar, aoContinuar }: { aviso: AvisoComC
   return (
     <div role="alertdialog" aria-label="Limite da categoria" className={`flex flex-col gap-3 rounded-2xl p-4 ${passou ? 'bg-saldo-negativo' : 'bg-saldo-apertado'}`}>
       <p className="font-bold">
-        {passou ? `Este gasto passa do limite de ${aviso.categoria.nome}` : `${aviso.categoria.nome} está perto do limite`}
+        {passou ? `Este gasto passa do planejado para ${aviso.categoria.nome}` : `${aviso.categoria.nome} está perto do planejado`}
       </p>
       <p className="text-sm">
         Você já gastou <b>{formatarReais(aviso.antes)}</b> de <b>{formatarReais(aviso.limite)}</b> este mês.
         Com este gasto vai para <b>{formatarReais(aviso.depois)}</b>
-        {passou ? <> — <b className="text-saida">{formatarReais(aviso.acima)} acima</b>.</> : <> ({aviso.pct}% do limite).</>}
+        {passou ? <> — <b className="text-saida">{formatarReais(aviso.acima)} acima</b>.</> : <> ({aviso.pct}% do planejado).</>}
       </p>
       <div className="h-2.5 overflow-hidden rounded-full bg-fundo/70">
         <div className={`h-full rounded-full ${passou ? 'bg-saida' : 'bg-alerta'}`} style={{ width: `${pct}%` }} />

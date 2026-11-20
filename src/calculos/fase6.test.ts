@@ -90,7 +90,7 @@ describe('retirada da reserva volta para a conta', () => {
     expect(efeitoNaConta(ls[1])).toBe(15000);
     const d = saldosDoMes('2026-11', [conta], ls).dias;
     expect(d[9]).toMatchObject({ economia: -15000, liquido: 15000, saldo: 75000 });
-    expect(livrePorDia(ls, '2026-11-20').aportes).toBe(25000);
+    expect(livrePorDia(ls, '2026-11-20').guardado).toBe(25000);
     expect(totaisDoMes(ls, '2026-11', '2026-11-20').guardado).toBe(25000);
   });
 });

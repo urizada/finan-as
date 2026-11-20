@@ -161,7 +161,7 @@ describe('renda configurada na primeira abertura', () => {
     expect(meses('Comissão').size).toBe(13);
     const em3 = somarMeses(mesDe(hoje), 3);
     expect(todos.filter((l) => l.descricao === 'Comissão' && l.data.startsWith(em3)).length).toBeGreaterThanOrEqual(4);
-    expect(todos.find((l) => l.descricao === 'Comissão' && l.data > hoje)?.certeza).toBe('provavel');
+    expect(todos.find((l) => l.descricao === 'Comissão' && l.data > hoje)?.certeza).toBe('garantida');
     expect(todos.find((l) => l.descricao === 'Salário' && l.data > hoje)?.certeza).toBe('garantida');
     // refazer não duplica
     await configurarRenda({ tipo: 'salario', porRecebimento: 300000, mensal: 300000, frequencia: 'mensal', dataInicio: hoje, contaId: conta.id });
@@ -182,5 +182,18 @@ describe('livre no primeiro mês', () => {
       expect(r.livre.fixos).toBe(0);
       expect(r.livre.livreHoje).toBeGreaterThan(0);
     }
+  });
+});
+
+import { simplificarEntradasAntigas } from './servicos';
+describe('entradas simples', () => {
+  it('entrada nova sempre conta como recebida e as antigas são convertidas', async () => {
+    const hoje = hojeISO();
+    const c = await repositorio.contas.criar({ nome: 'C', tipo: 'corrente', saldoInicial: 0, dataSaldoInicial: hoje });
+    await criarLancamento({ tipo: 'entrada', valor: 100, data: hoje, descricao: 'x', contaId: c.id, certeza: 'possivel', status: 'previsto' });
+    expect((await repositorio.lancamentos.listar())[0]).toMatchObject({ certeza: 'garantida', status: 'realizado' });
+    await repositorio.lancamentos.criar({ tipo: 'entrada', valor: 100, data: '2020-01-01', descricao: 'antiga', contaId: c.id, certeza: 'provavel', status: 'previsto' });
+    await simplificarEntradasAntigas();
+    expect((await repositorio.lancamentos.listar()).every((l) => l.certeza === 'garantida')).toBe(true);
   });
 });

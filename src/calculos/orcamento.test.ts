@@ -9,41 +9,65 @@ const lanc = (data: string, tipo: Lancamento['tipo'], valor: number, extra: Part
 const conta: Conta = { id: 'c1', nome: 'N', tipo: 'corrente', saldoInicial: 100000, dataSaldoInicial: '2026-11-01' };
 const k = { id: 'k', nome: 'K', limite: 1, diaFechamento: 3, diaVencimento: 10, contaPagamentoId: 'c1' };
 
-describe('5.1 livre por dia', () => {
+describe('5.1 livre por dia (com plano e meta de guardar)', () => {
   const hoje = '2026-11-21'; // 10 dias restantes contando hoje
   const ls = [
-    lanc('2026-11-05', 'entrada', 600000),                                           // garantida
-    lanc('2026-11-25', 'entrada', 300000, { certeza: 'provavel', status: 'previsto' }), // não conta no livre
-    lanc('2026-11-10', 'saida', 150000, { recorrenciaId: 'aluguel', status: 'previsto' }), // fixo (pago ou não)
-    lanc('2026-11-28', 'saida', 10000, { recorrenciaId: 'net', status: 'previsto' }),     // fixo futuro também conta
+    lanc('2026-11-05', 'entrada', 600000),
+    lanc('2026-11-25', 'entrada', 300000, { certeza: 'provavel', status: 'previsto' }), // entrada futura também conta
+    lanc('2026-11-10', 'saida', 150000, { recorrenciaId: 'aluguel', status: 'previsto' }),
+    lanc('2026-11-28', 'saida', 10000, { recorrenciaId: 'net', status: 'previsto' }),
     lanc('2026-11-12', 'saida', 20000, { contaId: undefined, cartaoId: 'k', parcela: { numero: 2, total: 3, grupoId: 'g' } }),
-    lanc('2026-11-15', 'transferencia', 30000, { destino: { tipo: 'meta', id: 'r' } }),  // aporte
-    lanc('2026-11-20', 'saida', 5000),                                                  // variável até ontem
-    lanc('2026-11-18', 'saida', 15000, { contaId: undefined, cartaoId: 'k' }),          // variável no cartão
-    lanc('2026-11-21', 'saida', 3000),                                                  // variável hoje
-    lanc('2026-11-10', 'transferencia', 99999, { cartaoId: 'k', faturaRef: '2026-11' }), // pagamento de fatura: neutro
-    lanc('2026-11-01', 'saida', 77777, { contaId: undefined, cartaoId: 'k', saldoAnterior: true }), // fatura antiga: neutra
+    lanc('2026-11-15', 'transferencia', 30000, { destino: { tipo: 'meta', id: 'r' } }),
+    lanc('2026-11-20', 'saida', 5000),
+    lanc('2026-11-18', 'saida', 15000, { contaId: undefined, cartaoId: 'k' }),
+    lanc('2026-11-21', 'saida', 3000),
+    lanc('2026-11-10', 'transferencia', 99999, { cartaoId: 'k', faturaRef: '2026-11' }),
+    lanc('2026-11-01', 'saida', 77777, { contaId: undefined, cartaoId: 'k', saldoAnterior: true }),
   ];
-  it('fórmula da especificação', () => {
+  it('sem plano: tudo que sobra vira o dia a dia', () => {
     const r = livrePorDia(ls, hoje);
-    expect(r).toMatchObject({ entradasGarantidas: 600000, fixos: 160000, parcelas: 20000, aportes: 30000, variaveisAteOntem: 20000, variaveisHoje: 3000, diasRestantes: 10 });
-    expect(r.orcamentoLivreMes).toBe(600000 - 160000 - 20000 - 30000 - 20000);    // 370.000
-    expect(r.livreHoje).toBe(37000);
-    expect(r.aindaPossoHoje).toBe(34000);
+    expect(r).toMatchObject({ entradas: 900000, fixos: 160000, parcelas: 20000, guardado: 30000, variaveisAteOntem: 20000, variaveisHoje: 3000, diasRestantes: 10 });
+    expect(r.capacidade).toBe(900000 - 160000 - 20000 - 30000);          // 690.000
+    expect(r.livreHoje).toBe(Math.floor((690000 - 20000) / 10));         // 67.000
+    expect(r.aindaPossoHoje).toBe(64000);
     expect(r.faltaEntrada).toBe(0);
-    expect(r.livreComProvaveis).toBe(67000);
   });
-  it('dinheiro de partida entra no orçamento', () => {
-    expect(livrePorDia(ls, hoje, 50000).livreHoje).toBe(42000);
+  it('com plano: usa o plano e mostra o que sobra no fim', () => {
+    const r = livrePorDia(ls, hoje, { planejado: 300000 });
+    expect(r.orcamentoDiaADia).toBe(300000);
+    expect(r.livreHoje).toBe(28000);                                    // (300.000 − 20.000) ÷ 10
+    expect(r.mediaPorDia).toBe(10000);                                  // 300.000 ÷ 30
+    expect(r.diferenca).toBe(18000);                                    // gastou menos antes: hoje pode mais
+    expect(r.sobraNoFim).toBe(390000);
+    expect(r.planoAcima).toBe(0);
   });
-  it('gastou menos hoje, amanhã sobe; gastou mais, cai', () => {
-    const amanha = livrePorDia(ls, '2026-11-22');      // os 3.000 de hoje viram "até ontem"
-    expect(amanha.livreHoje).toBe(Math.floor((370000 - 3000) / 9));
-    expect(amanha.livreHoje).toBeGreaterThan(37000);
-    const gastao = livrePorDia([...ls, lanc('2026-11-21', 'saida', 100000)], '2026-11-22');
-    expect(gastao.livreHoje).toBeLessThan(37000);
+  it('plano acima do que dá: limita e avisa', () => {
+    const r = livrePorDia(ls, hoje, { planejado: 800000 });
+    expect(r.orcamentoDiaADia).toBe(690000);
+    expect(r.planoAcima).toBe(110000);
   });
-  it('negativo mostra quanto falta de entrada', () => {
+  it('meta de guardar sai antes do dia a dia', () => {
+    const r = livrePorDia(ls, hoje, { guardarMeta: 100000 });
+    expect(r).toMatchObject({ guardarMeta: 100000, faltaGuardar: 70000, capacidade: 620000 });
+    expect(livrePorDia(ls, hoje, { guardarMeta: 10000 }).capacidade).toBe(690000); // já guardou mais que a meta
+  });
+  it('dinheiro de partida entra', () => {
+    expect(livrePorDia(ls, hoje, { partida: 50000 }).capacidade).toBe(740000);
+  });
+  it('gastou menos, amanhã sobe; gastou mais, cai', () => {
+    const plano = { planejado: 300000 };
+    const hojeR = livrePorDia(ls, hoje, plano);
+    expect(livrePorDia(ls, '2026-11-22', plano).livreHoje).toBeGreaterThan(hojeR.aindaPossoHoje);
+    const gastao = livrePorDia([...ls, lanc('2026-11-21', 'saida', 100000)], '2026-11-22', plano);
+    expect(gastao.livreHoje).toBeLessThan(hojeR.livreHoje);
+  });
+  it('primeiro mês: usa só a parte do plano dos dias que restam', () => {
+    const r = livrePorDia([], '2026-11-20', { planejado: 300000, inicio: '2026-11-20', partida: 200000 }); // 11 de 30 dias
+    expect(r.orcamentoDiaADia).toBe(110000);
+    expect(r.mediaPorDia).toBe(10000);                                 // igual a 300.000 ÷ 30
+    expect(r.livreHoje).toBe(10000);
+  });
+  it('mês que não fecha mostra quanto falta de entrada', () => {
     const r = livrePorDia([lanc('2026-11-10', 'saida', 150000, { recorrenciaId: 'a' })], hoje);
     expect(r.livreHoje).toBe(-15000);
     expect(r.faltaEntrada).toBe(150000);

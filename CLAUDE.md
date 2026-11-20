@@ -14,12 +14,7 @@ App de organização financeira pessoal, **mobile-first**, que responde três pe
 
 A v1 é para um único usuário (eu), com renda **100% variável (comissão)**. Mas a arquitetura deve ser **genérica desde o início**, para depois servir qualquer tipo de renda (CLT, autônomo, sazonal, mista) e vários usuários sem reescrever.
 
-**Princípio central — renda com grau de certeza.** Toda entrada tem um nível:
-- `garantida` — já caiu na conta, ou é salário fixo certo
-- `provavel` — contrato fechado, comissão a receber
-- `possivel` — pipeline, negociação em andamento
-
-O orçamento do dia a dia usa **apenas o garantido**. Provável e possível só entram nos cenários de previsão.
+**Entradas simples (decisão do usuário):** não há "certo / provável / talvez" nem "já caiu / vai cair" na tela. Lançou uma entrada, ela conta como recebida (no dia dela). Para simular, a pessoa lança e depois edita. Internamente toda entrada é `certeza: 'garantida'`; o campo continua no modelo só por compatibilidade.
 
 ## 2. Stack
 
@@ -58,7 +53,8 @@ Config {
   contaPadraoId?;                    // conta usada quando o lançamento não diz qual
   onboardingConcluido: boolean;
   divisaoEntrada?: { reserva; investimentos; metas; livre };  // % que somam 100 (padrão 20/10/0/70)
-  sugerirDivisao?: boolean;          // mostrar a divisão ao lançar entrada que caiu (padrão: sim)
+  sugerirDivisao?: boolean;          // mostrar a divisão ao lançar entrada (padrão: não)
+  guardarPorMes?: Centavos;          // meta de guardar por mês (sai antes do dia a dia)
 }
 
 Conta {                              // onde o dinheiro fica parado e disponível
@@ -70,7 +66,7 @@ Conta {                              // onde o dinheiro fica parado e disponíve
 Categoria {
   id; nome; tipo: 'entrada' | 'saida'; icone; cor;
   palavrasChave: string[];           // usadas pelo lançamento rápido
-  limiteMensal?: Centavos;           // limite de gasto por mês (só saída)
+  limiteMensal?: Centavos;           // quanto planeja gastar por mês (plano do dia a dia e limite)
 }
 
 FonteRenda {
@@ -141,22 +137,28 @@ SnapshotInvestimento {               // atualização manual de saldo → histó
 
 ## 5. Cálculos (em `src/calculos/`, todos com teste)
 
-### 5.1 Livre por dia — o número principal
+### 5.1 Pode gastar hoje — o número principal
 Base de **competência** (a compra conta no dia em que foi feita, mesmo no cartão):
 
 ```
-orcamentoLivreMes =
-    entradas GARANTIDAS do mês (realizadas + previstas)
-  − saídas fixas do mês (recorrências, pagas ou não)
+capacidade (dá para o dia a dia) =
+    dinheiro de partida + entradas do mês
+  − saídas fixas do mês (pagas ou não)
   − parcelas de cartão com competência no mês
-  − aportes planejados do mês (reserva, metas, investimentos)
-  − gastos variáveis do mês até ONTEM (conta + cartão)
+  − guardar (o maior entre a meta de guardar do mês e o já guardado)   ← guarda PRIMEIRO
 
-livreHoje        = orcamentoLivreMes ÷ dias restantes no mês (incluindo hoje)
-aindaPossoHoje   = livreHoje − gastos variáveis de HOJE
+plano do dia a dia = soma do planejado por categoria (comida, mercado, transporte, lazer…)
+                     no 1º mês de uso, só a parte proporcional aos dias que restam
+orçamento do dia a dia = plano (se houver), limitado à capacidade; sem plano, a capacidade
+
+livreHoje      = (orçamento − gastos do dia a dia até ONTEM) ÷ dias restantes (incluindo hoje)
+aindaPossoHoje = livreHoje − gastos do dia a dia de HOJE      ← o número grande ("Pode gastar hoje")
+média por dia  = orçamento ÷ dias do mês (do período)
 ```
-- Gastou menos hoje → amanhã sobe. Gastou mais → cai.
-- Se negativo: mostrar em vermelho + "faltam R$ X de entrada para fechar o mês".
+- Gastou menos → os próximos dias sobem ("hoje dá R$ X a mais que a média"). Gastou mais → caem ("segure um pouco") e a situação vira Atenção.
+- Plano maior que a capacidade: avisa "seu plano passa R$ X do que entra".
+- Se a capacidade é negativa: vermelho + "faltam R$ X de entrada para fechar o mês".
+- **Guardar primeiro:** a tela Hoje sugere "Antes de gastar, guarde R$ X" (com botão) e mostra "Gastando até R$ média por dia, você guarda R$ Y e fecha o mês tranquilo, e ainda sobram R$ Z".
 - O pagamento da fatura é **neutro** no orçamento (é só transferência); as compras já foram contadas.
 
 ### 5.2 Alerta de caixa
@@ -303,6 +305,8 @@ Cada fase termina com o app rodando e os testes passando.
 - **Repetições já lançadas para 12 meses:** ao abrir o app (e ao criar/editar uma repetição), os fixos e repetições de todos os meses desde o início do uso até 12 meses à frente já ficam gerados, para aparecerem em qualquer tela.
 - **Precisa entrar para os fixos (5.6):** para perfis com comissão, a Visão geral da tela Hoje mostra quanto precisa entrar por mês (fixos − salário) e por semana (× 12 ÷ 52). Não é meta de vendas.
 - **Livre no primeiro mês:** lançamentos com data anterior ao início do uso não entram no livre por dia (o saldo informado já os considera). "Na conta hoje" conta só o garantido.
+- **Plano do mês (tela Mais › Plano do mês):** mostra entra no mês, contas fixas e parcelas, **guardar primeiro** (editável, com sugestões de 10/15/20% das entradas) e o que dá para o dia a dia; abaixo, quanto quer gastar por mês em cada categoria (o `limiteMensal`), com as do dia a dia primeiro. A soma vira o plano do 5.1. O aviso "perto/passou do planejado" continua ao lançar.
+- **Entradas simples:** formulário de entrada só com valor, de onde veio, data, conta e repetir. Lançamento rápido sem escolha de certeza. Entradas antigas com outro nível são convertidas para "recebida" ao abrir o app. A sugestão de divisão a cada entrada fica desligada por padrão (o "guardar primeiro" da tela Hoje faz esse papel).
 - **Referência visual:** o usuário enviou prints de um app de finanças que gosta (grade de saldos dia a dia, totais do mês, economizado). Serve de inspiração, não de cópia: a ideia é ser mais visual e mais simples.
 
 ## 9. Fora da v1 (já previsto na arquitetura)

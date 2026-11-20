@@ -5,7 +5,7 @@ const ITENS: { rota: Rota; titulo: string; sub: string }[] = [
   { rota: 'lancamentos', titulo: 'Lançamentos', sub: 'Lista, filtros, editar e excluir' },
   { rota: 'para-onde-foi', titulo: 'Para onde foi', sub: 'Gastos por categoria' },
   { rota: 'cartoes', titulo: 'Cartões', sub: 'Faturas, parcelas e limite' },
-  { rota: 'limites', titulo: 'Limites por categoria', sub: 'Quanto pode gastar em cada coisa' },
+  { rota: 'limites', titulo: 'Plano do mês', sub: 'Quanto guardar e quanto gastar com comida, lazer…' },
   { rota: 'metas', titulo: 'Reserva e metas', sub: 'Progresso e aportes' },
   { rota: 'investimentos', titulo: 'Investimentos', sub: 'Carteira e caixinhas' },
   { rota: 'configuracoes', titulo: 'Configurações', sub: 'Contas, categorias, fontes, backup' },

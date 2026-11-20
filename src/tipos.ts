@@ -23,8 +23,10 @@ export interface Config {
   contaPadraoId?: Id;
   /** 5.7: como dividir o que sobra de uma entrada depois dos fixos (percentuais que somam 100). */
   divisaoEntrada?: { reserva: number; investimentos: number; metas: number; livre: number };
-  /** Mostrar a sugestão de divisão ao lançar entrada que já caiu. Padrão: sim. */
+  /** Mostrar a sugestão de divisão ao lançar entrada. Padrão: não. */
   sugerirDivisao?: boolean;
+  /** Quanto quer guardar por mês (sai antes do dia a dia). */
+  guardarPorMes?: Centavos;
 }
 
 export interface Conta {

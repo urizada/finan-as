@@ -136,7 +136,11 @@ export interface OpcoesNovo {
  * Cria um lançamento novo: simples, parcelado no cartão ou que se repete.
  * Devolve uma função que desfaz tudo o que foi criado.
  */
-export async function criarLancamento(dados: Omit<Lancamento, 'id'>, op: OpcoesNovo = {}): Promise<() => Promise<void>> {
+export async function criarLancamento(dadosOriginais: Omit<Lancamento, 'id'>, op: OpcoesNovo = {}): Promise<() => Promise<void>> {
+  // Entrada é simples: lançou, conta como recebida (sem "provável"/"talvez").
+  const dados: Omit<Lancamento, 'id'> = dadosOriginais.tipo === 'entrada'
+    ? { ...dadosOriginais, certeza: 'garantida', status: dadosOriginais.data <= hojeISO() ? 'realizado' : 'previsto' } : dadosOriginais;
+  if (op.repeticao) op = { ...op, repeticao: { ...op.repeticao, certezaProximas: undefined } };
   const desfazer = await criarLancamentoSemAviso(dados, op);
   if (dados.tipo === 'entrada' && dados.certeza === 'garantida' && dados.status === 'realizado') avisarEntradaRecebida(dados.valor);
   return desfazer;
@@ -331,6 +335,8 @@ export async function resumoHoje(diasAFrente = 10): Promise<ResumoHoje> {
   // O saldo informado no primeiro dia já desconta o que aconteceu antes: isso não entra de novo no livre.
   const doMesDesdeInicio = doMes.filter((l) => l.data >= inicio);
   const { partida, sobraAnterior } = calcularPartida(mes, inicio, config.destinoSobraMes, contas, lancamentos, cartoes, hoje);
+  const categorias = await repositorio.categorias.listar();
+  const planejado = categorias.filter((c) => c.tipo === 'saida').reduce((s, c) => s + (c.limiteMensal ?? 0), 0);
   const faturas = calcularFaturas(lancamentos, cartoes);
   const limite = somarDias(hoje, diasAFrente);
 
@@ -349,7 +355,7 @@ export async function resumoHoje(diasAFrente = 10): Promise<ResumoHoje> {
 
   return {
     hoje,
-    livre: livrePorDia(doMesDesdeInicio, hoje, partida),
+    livre: livrePorDia(doMesDesdeInicio, hoje, { partida, planejado, guardarMeta: config.guardarPorMes ?? 0, inicio }),
     alerta: alertaDeCaixa(contas, lancamentos, cartoes, hoje),
     saldoHoje: saldoDasContas(contas, lancamentos, cartoes, hoje, true), // o que está de fato na conta
     fimDoMes: saldoDasContas(contas, lancamentos, cartoes, fim).total,
@@ -535,7 +541,7 @@ export async function configurarRenda(p: {
   tipo: 'salario' | 'comissao'; porRecebimento: Centavos; mensal: Centavos; frequencia: Frequencia; dataInicio: DataISO; contaId: Id;
 }): Promise<void> {
   const nome = p.tipo === 'salario' ? 'Salário' : 'Comissão';
-  const certeza: Certeza = p.tipo === 'salario' ? 'garantida' : 'provavel';
+  const certeza: Certeza = 'garantida';
   const fontes = await repositorio.fontesRenda.listar();
   const existente = fontes.find((f) => f.nome === nome);
   const dadosFonte = { nome, tipo: p.tipo === 'salario' ? 'fixa' as const : 'variavel' as const, valorMedioMensal: p.mensal, certezaPadrao: certeza };
@@ -559,4 +565,18 @@ export async function rendaConfigurada(tipo: 'salario' | 'comissao'): Promise<Re
   const nome = tipo === 'salario' ? 'Salário' : 'Comissão';
   const fonte = (await repositorio.fontesRenda.listar()).find((f) => f.nome === nome);
   return fonte ? (await repositorio.recorrencias.listar()).find((r) => r.modelo.fonteRendaId === fonte.id && r.modelo.tipo === 'entrada') : undefined;
+}
+
+/**
+ * Entradas ficaram simples (sem provável/talvez): converte o que foi salvo nas versões antigas.
+ * Pode rodar sempre; só mexe no que ainda não está "garantida".
+ */
+export async function simplificarEntradasAntigas(): Promise<void> {
+  const hoje = hojeISO();
+  const [ls, recs, fontes] = await Promise.all([repositorio.lancamentos.listar(), repositorio.recorrencias.listar(), repositorio.fontesRenda.listar()]);
+  for (const l of ls) if (l.tipo === 'entrada' && l.certeza !== 'garantida')
+    await repositorio.lancamentos.salvar({ ...l, certeza: 'garantida', status: l.data <= hoje ? 'realizado' : 'previsto' });
+  for (const r of recs) if (r.modelo.tipo === 'entrada' && r.modelo.certeza && r.modelo.certeza !== 'garantida')
+    await repositorio.recorrencias.salvar({ ...r, modelo: { ...r.modelo, certeza: 'garantida' } });
+  for (const f of fontes) if (f.certezaPadrao !== 'garantida') await repositorio.fontesRenda.salvar({ ...f, certezaPadrao: 'garantida' });
 }

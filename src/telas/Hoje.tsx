@@ -64,6 +64,8 @@ export function Hoje() {
       <div className="flex flex-col gap-6">
         {r && <CartaoLivre r={r} sit={sit} aoExplicar={() => setExplicar(true)} />}
 
+        {r && <GuardarPrimeiro r={r} />}
+
         {cad && <LancamentoRapido cad={cad} aoDetalhes={setDetalhes} />}
 
         {r && cad && <Chegando r={r} cad={cad} aoEditar={setEditando} />}
@@ -146,19 +148,25 @@ function CartaoLivre({ r, sit, aoExplicar }: { r: ResumoHoje; sit?: { situacao: 
   const l = r.livre;
   const negativo = l.livreHoje < 0;
   const s = SITUACAO[sit?.situacao ?? (negativo ? 'aperto' : 'tranquilo')];
+  const dif = l.diferenca;
   return (
     <section className={`rounded-3xl px-5 pt-4 pb-4 ${s.fundo}`}>
       <div className="flex items-center gap-2">
         <span className={`rounded-full px-2.5 py-1 text-xs font-extrabold uppercase tracking-wide ${s.chip}`}><span aria-hidden="true">{s.icone} </span>{s.rotulo}</span>
         {sit && <span className="min-w-0 text-sm font-semibold">{sit.motivo}</span>}
       </div>
-      <p className="mt-4 text-sm font-bold text-texto-2">Livre para gastar hoje</p>
-      <p className={`mt-0.5 text-5xl font-extrabold tracking-tight tabular-nums ${negativo ? 'text-saida' : 'text-texto'}`}>{formatarReais(l.livreHoje)}</p>
+      <p className="mt-4 text-sm font-bold text-texto-2">Pode gastar hoje</p>
+      <p className={`mt-0.5 text-5xl font-extrabold tracking-tight tabular-nums ${negativo ? 'text-saida' : 'text-texto'}`}>{formatarReais(negativo ? l.livreHoje : Math.max(0, l.aindaPossoHoje))}</p>
       {negativo ? (
-        <p className="mt-2 font-semibold text-saida">Faltam {formatarReais(l.faltaEntrada)} de entrada para fechar o mês.</p>
+        <p className="mt-2 font-semibold text-saida">Faltam {formatarReais(l.faltaEntrada)} de entrada para fechar o mês. Evite gastar hoje.</p>
+      ) : l.aindaPossoHoje < 0 ? (
+        <p className="mt-2 font-semibold text-saida">Hoje você passou {formatarReais(-l.aindaPossoHoje)} do previsto. Amanhã o valor fica menor.</p>
       ) : (
-        <p className="mt-2 text-base">
-          Ainda posso hoje: <b className={`tabular-nums ${l.aindaPossoHoje < 0 ? 'text-saida' : ''}`}>{formatarReais(l.aindaPossoHoje)}</b>
+        <p className="mt-2 text-sm">
+          {l.variaveisHoje > 0 ? <>Já gastou {formatarReais(l.variaveisHoje)} hoje, de {formatarReais(l.livreHoje)}. </> : null}
+          {dif >= 100 ? <>Você gastou menos nos outros dias: hoje dá <b>{formatarReais(dif)} a mais</b> que a média de {formatarReais(l.mediaPorDia)}.</>
+            : dif <= -100 ? <>Você gastou acima do previsto antes: hoje o valor caiu <b>{formatarReais(-dif)}</b>. Segure um pouco para fechar o mês.</>
+            : <>Na média do mês ({formatarReais(l.mediaPorDia)} por dia).</>}
         </p>
       )}
       {r.alerta && (
@@ -167,6 +175,45 @@ function CartaoLivre({ r, sit, aoExplicar }: { r: ResumoHoje; sit?: { situacao: 
         </a>
       )}
       <button type="button" onClick={aoExplicar} className="mt-3 text-sm font-bold text-destaque">Como é calculado ›</button>
+    </section>
+  );
+}
+
+/** Guardar primeiro: sugere guardar antes de gastar e mostra que dá para ficar tranquilo. */
+function GuardarPrimeiro({ r }: { r: ResumoHoje }) {
+  const l = r.livre;
+  if (l.capacidade < 0) return null;
+  return (
+    <section className="flex flex-col gap-3 rounded-2xl border border-borda bg-superficie px-4 py-4">
+      {l.guardarMeta === 0 ? (
+        <>
+          <p className="font-bold">Guarde primeiro, gaste depois</p>
+          <p className="text-sm text-texto-2">Defina quanto quer guardar por mês. O app separa esse valor antes e calcula o que dá para gastar com o resto.</p>
+          <a href={linkPara('limites')} className="self-start rounded-full bg-texto px-4 py-2 text-sm font-bold text-fundo">Definir quanto guardar</a>
+        </>
+      ) : l.faltaGuardar > 0 ? (
+        <>
+          <p className="font-bold">Antes de gastar, guarde {formatarReais(l.faltaGuardar)}</p>
+          <p className="text-sm text-texto-2">Sua meta é guardar {formatarReais(l.guardarMeta)} este mês{l.guardado > 0 ? ` (já guardou ${formatarReais(l.guardado)})` : ''}.</p>
+          <button type="button" onClick={() => guardarNaReserva(l.faltaGuardar)} className="self-start rounded-full bg-texto px-4 py-2 text-sm font-bold text-fundo">Guardar agora na reserva</button>
+        </>
+      ) : (
+        <p className="font-bold text-entrada">✓ Você já guardou {formatarReais(l.guardado)} este mês.</p>
+      )}
+      {l.livreHoje > 0 && (
+        <p className="rounded-xl bg-saldo-ok px-3 py-2 text-sm">
+          Gastando até <b>{formatarReais(l.mediaPorDia)} por dia</b>, você {l.guardarMeta > 0 || l.guardado > 0 ? <>guarda <b>{formatarReais(Math.max(l.guardarMeta, l.guardado))}</b> e </> : null}fecha o mês tranquilo
+          {l.sobraNoFim > 0 ? <>, e ainda sobram <b>{formatarReais(l.sobraNoFim)}</b></> : null}.
+        </p>
+      )}
+      {l.planoAcima > 0 && (
+        <a href={linkPara('limites')} className="rounded-xl bg-saldo-apertado px-3 py-2 text-sm">
+          Seu plano de gastos passa <b>{formatarReais(l.planoAcima)}</b> do que entra no mês. <b className="text-destaque">Ajustar plano ›</b>
+        </a>
+      )}
+      {l.planejado === 0 && l.guardarMeta > 0 && (
+        <a href={linkPara('limites')} className="text-sm font-bold text-destaque">Planeje quanto gastar com comida, transporte e lazer ›</a>
+      )}
     </section>
   );
 }
@@ -183,23 +230,20 @@ function Explicacao({ r }: { r: ResumoHoje }) {
     <div className="flex flex-col gap-3 text-sm">
       <div className="rounded-2xl bg-superficie px-4 py-2">
         {linha('Dinheiro de partida do mês', l.partida, '+')}
-        {linha('Entradas garantidas do mês', l.entradasGarantidas, '+')}
-        {linha('Fixos do mês (pagos ou não)', l.fixos, '−')}
+        {linha('Entradas do mês', l.entradas, '+')}
+        {linha('Contas fixas do mês', l.fixos, '−')}
         {linha('Parcelas de cartão do mês', l.parcelas, '−')}
-        {linha('Guardado/aportes do mês', l.aportes, '−')}
+        {linha('Guardar (meta ou já guardado)', Math.max(l.guardarMeta, l.guardado), '−')}
+        {linha('Dá para o dia a dia', l.capacidade, '=', true)}
+        {l.planejado > 0 && linha('Seu plano do dia a dia', l.orcamentoDiaADia, '=', true)}
         {linha('Gastos do dia a dia até ontem', l.variaveisAteOntem, '−')}
-        {linha('Livre no resto do mês', l.orcamentoLivreMes, '=', true)}
         {linha(`÷ ${l.diasRestantes} dias (contando hoje)`, l.livreHoje, '=', true)}
       </div>
-      <p className="text-texto-2">
-        Só conta entrada garantida: comissão provável não entra aqui. Gastou menos hoje, amanhã sobe; gastou mais, cai.
-        Pagamento de fatura não conta de novo (as compras já foram contadas no dia da compra).
-      </p>
+      <p className="text-texto-2">Gastou menos hoje, amanhã sobe. Gastou mais, cai. Pagamento de fatura não conta de novo: as compras já foram contadas no dia em que você comprou.</p>
       <p className="text-texto-2">Dinheiro de partida: o que já estava na conta no começo do mês (no primeiro mês, o saldo que você informou), menos a fatura que já estava aberta antes do app.</p>
     </div>
   );
 }
-
 
 function Chegando({ r, cad, aoEditar }: { r: ResumoHoje; cad: Cadastros; aoEditar: (l: Lancamento) => void }) {
   const itens = r.chegando;
@@ -223,7 +267,7 @@ function LinhaChegando({ it, hoje, cad, aoEditar }: { it: ItemChegando; hoje: st
   const cat = l ? cad.categoria(l.categoriaId) : undefined;
   const titulo = l ? l.descricao : `Fatura ${cad.cartao(f!.cartaoId)?.nome ?? ''}`;
   const valor = l ? l.valor : f!.restante;
-  const extra = l && entrada && l.certeza !== 'garantida' ? (l.certeza === 'provavel' ? ' · provável' : ' · talvez') : '';
+  const extra = entrada ? ' · a receber' : '';
   return (
     <li className="flex items-center gap-3 px-4 py-3">
       <button type="button" onClick={() => l && aoEditar(l)} className="flex min-w-0 flex-1 items-center gap-3 text-left" disabled={!l}>
@@ -236,10 +280,12 @@ function LinhaChegando({ it, hoje, cad, aoEditar }: { it: ItemChegando; hoje: st
         </span>
         <span className={`shrink-0 font-bold tabular-nums ${entrada ? 'text-entrada' : ''}`}>{entrada ? '+' : '−'}{formatarReais(valor)}</span>
       </button>
-      <button type="button" onClick={() => (f ? pagarFatura(f) : marcarComoPago(l!.id))}
-        className="shrink-0 rounded-full border border-destaque px-3 py-1.5 text-sm font-bold text-destaque active:scale-95">
-        {entrada ? 'Caiu' : 'Pagar'}
-      </button>
+      {!entrada && (
+        <button type="button" onClick={() => (f ? pagarFatura(f) : marcarComoPago(l!.id))}
+          className="shrink-0 rounded-full border border-destaque px-3 py-1.5 text-sm font-bold text-destaque active:scale-95">
+          Pagar
+        </button>
+      )}
     </li>
   );
 }

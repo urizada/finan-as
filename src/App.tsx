@@ -4,7 +4,7 @@ import { PainelLancamento } from './componentes/PainelLancamento';
 import { DivisaoEntrada } from './componentes/DivisaoEntrada';
 import { Folha } from './componentes/ui';
 import { aoReceberEntrada } from './data/eventos';
-import { garantirMesesAFrente } from './data/servicos';
+import { garantirMesesAFrente, simplificarEntradasAntigas } from './data/servicos';
 import { repositorio } from './data/repositorio';
 import { useConsulta } from './data/useConsulta';
 import { useRota, type Rota } from './navegacao';
@@ -46,12 +46,12 @@ export function App() {
   useEffect(() => setLancando(false), [rota]);
   const [entrada, setEntrada] = useState<number | null>(null);
   const fecharDivisao = useCallback(() => setEntrada(null), []);
-  const sugerir = config?.sugerirDivisao ?? true;
+  const sugerir = config?.sugerirDivisao ?? false;
   useEffect(() => aoReceberEntrada((v) => { if (sugerir) { setLancando(false); setEntrada(v); } }), [sugerir]);
 
   // Fixos e repetições já ficam lançados para os próximos 12 meses.
   const pronto = config?.onboardingConcluido ?? false;
-  useEffect(() => { if (pronto) garantirMesesAFrente(); }, [pronto]);
+  useEffect(() => { if (pronto) simplificarEntradasAntigas().then(() => garantirMesesAFrente()); }, [pronto]);
 
   useEffect(() => {
     const tema = config?.tema ?? 'claro';
